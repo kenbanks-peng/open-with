@@ -1,5 +1,10 @@
 [tools]
 "cargo:tauri-cli" = "latest"
+"npm:vite" = "latest"
+
+[tasks.setup]
+description = "Install dependencies"
+run = "bun install"
 
 [tasks.dev]
 description = "Run in dev mode"
