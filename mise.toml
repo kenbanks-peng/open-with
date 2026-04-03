@@ -1,3 +1,6 @@
+[tools]
+"cargo:tauri-cli" = "latest"
+
 [tasks.dev]
 description = "Run in dev mode"
 run = "cargo tauri dev"
