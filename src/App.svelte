@@ -936,6 +936,10 @@
 		color: var(--success);
 	}
 
+	.assigned.muted {
+		color: var(--text-muted);
+	}
+
 	.unassigned {
 		color: var(--text-muted);
 		font-style: italic;
