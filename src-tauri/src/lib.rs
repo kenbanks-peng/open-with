@@ -117,6 +117,12 @@ fn get_apps_for_extension(state: State<AppState>, ext: String) -> Result<Vec<App
 }
 
 #[tauri::command]
+fn get_common_apps_for_app(state: State<AppState>, app_id: i64) -> Result<Vec<App>, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.get_common_apps_for_app(app_id).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn breakout_group(state: State<AppState>, group_id: i64) -> Result<usize, String> {
     let mut db = state.db.lock().map_err(|e| e.to_string())?;
     db.breakout_group(group_id).map_err(|e| e.to_string())
@@ -160,6 +166,7 @@ pub fn run() {
             delete_group,
             assign_app_to_group,
             get_apps_for_extension,
+            get_common_apps_for_app,
             breakout_group,
             get_summary,
         ])

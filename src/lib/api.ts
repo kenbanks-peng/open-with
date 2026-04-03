@@ -65,6 +65,10 @@ export async function getAppsForExtension(ext: string): Promise<App[]> {
 	return invoke("get_apps_for_extension", { ext });
 }
 
+export async function getCommonAppsForApp(appId: number): Promise<App[]> {
+	return invoke("get_common_apps_for_app", { appId });
+}
+
 export async function getSummary(): Promise<[number, number, number]> {
 	return invoke("get_summary");
 }

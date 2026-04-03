@@ -625,6 +625,61 @@ impl Database {
         rows.collect()
     }
 
+    pub fn get_common_apps_for_app(&self, app_id: i64) -> Result<Vec<App>> {
+        // Get all group IDs assigned to this app
+        let mut stmt = self
+            .conn
+            .prepare("SELECT id FROM groups WHERE assigned_app_id = ?1")?;
+        let group_ids: Vec<i64> = stmt
+            .query_map(params![app_id], |r| r.get::<_, i64>(0))?
+            .collect::<Result<_>>()?;
+
+        if group_ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        // Intersect common_apps across all groups
+        let mut common: Option<HashSet<i64>> = None;
+        for gid in &group_ids {
+            let apps = self.compute_common_apps_set(*gid)?;
+            common = Some(match common {
+                None => apps,
+                Some(c) => c.intersection(&apps).copied().collect(),
+            });
+        }
+
+        let ids = common.unwrap_or_default();
+        if ids.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let placeholders: Vec<String> = ids
+            .iter()
+            .enumerate()
+            .map(|(i, _)| format!("?{}", i + 1))
+            .collect();
+        let sql = format!(
+            "SELECT id, name, path, (SELECT COUNT(*) FROM ext_apps WHERE app_id = a.id) as ext_count
+             FROM apps a WHERE id IN ({}) ORDER BY name COLLATE NOCASE",
+            placeholders.join(",")
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let id_vec: Vec<i64> = ids.into_iter().collect();
+        let refs: Vec<&dyn rusqlite::types::ToSql> = id_vec
+            .iter()
+            .map(|id| id as &dyn rusqlite::types::ToSql)
+            .collect();
+        let rows = stmt.query_map(refs.as_slice(), |r| {
+            Ok(App {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                path: r.get(2)?,
+                ext_count: r.get(3)?,
+            })
+        })?;
+        rows.collect()
+    }
+
     pub fn validate_move(&mut self, exts: &[String], target_group_id: i64) -> Result<bool> {
         // Get common apps for target group (use cache)
         let group_apps = if let Some(cached) = self.common_app_cache.get(&target_group_id) {

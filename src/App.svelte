@@ -5,6 +5,7 @@
 		getGroups,
 		getGroupDetail,
 		getAppsForExtension,
+		getCommonAppsForApp,
 		validateMove,
 		moveExtensions,
 		createGroup,
@@ -30,10 +31,11 @@
 	let editingGroupId: number | null = $state(null);
 	let editingName = $state("");
 
-	let appSort: "alpha" | "ext_count" = $state("ext_count");
+	let appSort = $state<"alpha" | "ext_count">("ext_count");
 	let groupFilterMode: "eligible" | "assigned" = $state("assigned");
 
 	let extApps: App[] = $state([]);
+	let appApps: App[] = $state([]);
 
 	let dragExts: string[] = $state([]);
 	let dropValid: Record<number, boolean> = $state({});
@@ -51,6 +53,13 @@
 		groups: undefined,
 		extensions: undefined,
 	});
+
+	function getVisibleApps(): App[] {
+		if (focusedPanel === "apps") return appApps;
+		if (focusedPanel === "groups" && groupDetail) return groupDetail.common_apps;
+		return extApps;
+	}
+	let visibleApps = $derived(getVisibleApps());
 
 	let sortedApps = $derived(
 		appSort === "alpha"
@@ -105,6 +114,7 @@
 		selectedAppId = appId;
 		const assignedOnly = selectedAppId !== null && groupFilterMode === "assigned";
 		groups = await getGroups(appId ?? undefined, assignedOnly);
+		appApps = appId !== null ? await getCommonAppsForApp(appId) : [];
 		selectedExts = new Set();
 		if (sortedGroups.length > 0) {
 			await selectGroup(sortedGroups[0].id);
@@ -257,6 +267,9 @@
 		await refresh();
 		if (selectedGroupId === groupId) {
 			groupDetail = await getGroupDetail(groupId);
+		}
+		if (selectedAppId !== null) {
+			appApps = await getCommonAppsForApp(selectedAppId);
 		}
 	}
 
@@ -617,20 +630,6 @@
 				{#if groupDetail}
 					<div class="panel-header">
 						<h2>{groupDetail.group.name}</h2>
-						{#if focusedPanel === 'extensions' && groupDetail.group.id !== -1 && extApps.length > 0}
-							<select
-								value={groupDetail.group.assigned_app_id ?? ""}
-								onchange={(e: Event) => {
-									const val = (e.target as HTMLSelectElement).value;
-									onAssignApp(groupDetail!.group.id, val ? Number(val) : null);
-								}}
-							>
-								<option value="">-- Assign app --</option>
-								{#each extApps as app (app.id)}
-									<option value={app.id}>{app.name}</option>
-								{/each}
-							</select>
-						{/if}
 						<button
 							onclick={() => onBreakout(groupDetail!.group.id)}
 							title="Split into sub-groups by app compatibility"
@@ -671,6 +670,47 @@
 					</div>
 				{/if}
 			</div>
+
+			<!-- Far right: Apps for extension, group, or app -->
+			{#if (groupDetail && groupDetail.extensions.length > 0) || (focusedPanel === "apps" && selectedAppId !== null)}
+				<div class="panel ext-apps-panel">
+					<div class="panel-header">
+						{#if focusedPanel === "apps" && selectedAppId !== null}
+							{@const selectedApp = sortedApps.find(a => a.id === selectedAppId)}
+							<h2>Apps for <span class="ext-apps-ext">{selectedApp?.name ?? "app"}</span></h2>
+						{:else if focusedPanel === "groups" && groupDetail}
+							<h2>Apps for <span class="ext-apps-ext">{groupDetail.group.name}</span></h2>
+						{:else if groupDetail?.extensions[extCursor]}
+							<h2>Apps for <span class="ext-apps-ext">.{groupDetail.extensions[extCursor].ext}</span></h2>
+						{:else}
+							<h2>Apps</h2>
+						{/if}
+					</div>
+					<div class="panel-body">
+						{#each visibleApps as app (app.id)}
+							<div
+								class="ext-app-item"
+								class:ext-app-assigned={groupDetail?.group.assigned_app_id === app.id}
+							>
+								<span class="ext-app-name">{app.name}</span>
+								{#if focusedPanel !== "apps" && groupDetail && groupDetail.group.id !== -1}
+									<button
+										class="assign-btn"
+										class:assigned={groupDetail.group.assigned_app_id === app.id}
+										onclick={() => onAssignApp(groupDetail!.group.id, groupDetail!.group.assigned_app_id === app.id ? null : app.id)}
+										title={groupDetail.group.assigned_app_id === app.id ? "Unassign app" : "Assign app"}
+									>
+										{groupDetail.group.assigned_app_id === app.id ? "Assigned" : "Assign"}
+									</button>
+								{/if}
+							</div>
+						{/each}
+						{#if visibleApps.length === 0}
+							<div class="empty">No apps found</div>
+						{/if}
+					</div>
+				</div>
+			{/if}
 		</div>
 	{/if}
 
@@ -835,15 +875,6 @@
 		font-size: 12px;
 	}
 
-	.panel-header select {
-		padding: 4px 6px;
-		border: 1px solid var(--border);
-		border-radius: 4px;
-		background: var(--bg-crust);
-		color: var(--text-primary);
-		font-size: 12px;
-		max-width: 160px;
-	}
 
 	.panel-body {
 		flex: 1;
@@ -1020,5 +1051,59 @@
 		text-align: center;
 		color: var(--text-faint);
 		font-size: 13px;
+	}
+
+	.ext-apps-panel {
+		flex: 0 0 240px;
+	}
+
+	.ext-apps-ext {
+		font-family: "SF Mono", "Fira Code", monospace;
+		color: var(--accent);
+		font-weight: 500;
+	}
+
+	.ext-app-item {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 4px 12px;
+		font-size: 13px;
+	}
+
+	.ext-app-item:hover {
+		background: var(--item-hover);
+	}
+
+	.ext-app-item.ext-app-assigned {
+		color: var(--success);
+	}
+
+	.ext-app-name {
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.assign-btn {
+		padding: 1px 8px;
+		font-size: 11px;
+		border: 1px solid var(--border);
+		border-radius: 4px;
+		background: var(--bg-mantle);
+		color: var(--text-muted);
+		cursor: pointer;
+		flex-shrink: 0;
+	}
+
+	.assign-btn:hover {
+		background: var(--bg-surface0);
+		color: var(--text-primary);
+	}
+
+	.assign-btn.assigned {
+		background: var(--success);
+		color: var(--ctp-crust);
+		border-color: var(--success);
 	}
 </style>
