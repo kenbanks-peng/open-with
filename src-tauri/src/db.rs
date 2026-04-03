@@ -62,227 +62,712 @@ impl Database {
     }
 
     fn seed_extension_categories(&self) -> Result<()> {
-        let count: i64 = self.conn.query_row(
-            "SELECT COUNT(*) FROM extension_categories",
-            [],
-            |r| r.get(0),
-        )?;
+        let count: i64 =
+            self.conn
+                .query_row("SELECT COUNT(*) FROM extension_categories", [], |r| {
+                    r.get(0)
+                })?;
         if count > 0 {
             return Ok(());
         }
 
         let categories: &[(&str, &[&str])] = &[
-            ("audio", &[
-                "mp3", "wav", "wave", "aac", "flac", "ogg", "m4a", "m4b", "wma", "aiff",
-                "aif", "aifc", "alac", "opus", "ac3", "amr", "ape", "au", "caf", "dts",
-                "m4r", "mka", "mp2", "ra", "snd", "wv", "weba",
-                "aob", "it", "m2a", "mlp", "mod", "mp1", "mpa", "mpc", "oma", "rmi",
-                "s3m", "spx", "voc", "vqf", "xa", "xm",
-                "f4a", "f4b", "aa3", "acm", "pcm", "vox", "tak", "tta", "oga",
-                "aa", "aax", "adts", "bwf", "cdda", "m4p", "mpga", "ram", "rmp",
-                "sd2", "ul", "ulaw", "ulw",
-            ]),
-            ("audio-project", &[
-                "aup", "aup3", "band", "logic", "logicx", "ptx", "ptf", "als", "flp",
-                "rpp", "sesx", "mid", "midi",
-                "cst", "dpst", "gbproj", "gchdb", "logikcs", "mwand", "patch",
-                "pst", "sbk", "sdir",
-                "kar", "smf",
-            ]),
-            ("video", &[
-                "mp4", "avi", "mkv", "mov", "wmv", "flv", "webm", "m4v", "mpg", "mpeg",
-                "3gp", "vob", "ogv", "mts", "m2ts", "divx", "asf", "f4v", "rm",
-                "rmvb",
-                "anx", "axa", "axv", "bik", "crf", "dvdmedia", "evo", "gxf", "m1v",
-                "m2p", "m2t", "mt2s", "nsv", "nuv", "ogx", "rec", "tod", "tp", "vro",
-                "wtv",
-                "mk3d", "f4p", "3g2", "qt", "amv", "swf", "xvid", "yuv", "dv",
-                "ogm", "dat", "mxf", "movpkg", "mcf", "mks", "ps",
-                "3gp2", "3gpp", "avchd", "bdm", "bdmv", "dav", "dif", "flc", "fli",
-                "m15", "m75", "mpe", "m2v", "mpg4", "qta", "sdv", "vfw", "wm",
-            ]),
-            ("video-project", &[
-                "prproj", "fcpx", "fcpbundle", "imovieproject", "veg", "kdenlive", "mlt",
-                "aep", "drp",
-                "imovielibrary", "imovieevent", "imovietrailer", "imoviemobile",
-                "cboard", "theater", "tvlibrary", "videoslibrary",
-                "screenstudio", "screenstudiopreset",
-            ]),
-            ("image", &[
-                "png", "jpg", "jpeg", "gif", "bmp", "tiff", "tif", "webp", "svg", "ico",
-                "heic", "heif", "raw", "cr2", "nef", "arw", "dng", "orf", "rw2", "pef",
-                "srw", "cr3", "icns", "pbm", "pgm", "ppm", "pnm", "tga", "exr", "hdr",
-                "jp2", "jpx", "avif", "jxl",
-                "3fr", "ari", "bay", "cap", "crw", "dcr", "dcs", "drf", "erf", "fff",
-                "gpr", "iiq", "k25", "kdc", "lfp", "mdc", "mef", "mos", "mrw", "nefx",
-                "nrw", "pxn", "r3d", "raf", "rwl", "sr2", "srf", "x3f",
-                "eps", "hdp", "j2k", "jpegxr", "jxr", "wdp", "dxb", "fh10", "fh11",
-                "abr",
-                "aae", "xmp", "pvt", "slm",
-                "aplibrary", "migratedaplibrary", "migratedphotolibrary",
-                "photolibrary", "photosasset", "photoslibrary",
-                "astc", "avci", "avcs", "cel", "cleanshot", "dds", "dib", "fpx",
-                "heics", "heifs", "hif", "j2c", "jpe", "jpf", "ktx", "mpo",
-                "pct", "pic", "pict", "pfm", "pntg", "pvr", "sgi", "svgz", "xbm",
-                "photo booth",
-            ]),
-            ("image-project", &[
-                "psd", "psb", "xcf", "ai", "sketch", "fig", "afdesign", "afphoto",
-                "procreate",
-                "af", "afassets", "afbrushes", "afextensiondocument", "affinity",
-                "affinity_designer", "affinity_photo", "afluts", "afmacros",
-                "afpackage", "afpub", "afstudio", "aftemplate", "persona", "psdt",
-            ]),
-            ("image-project-backup", &[
-                "afdesign~backup~", "afdesign~lock~", "afdesign~tmp~",
-                "affinity~backup~", "affinity~lock~", "affinity~tmp~",
-                "afphoto~backup~", "afphoto~lock~", "afphoto~tmp~",
-                "afpub~backup~", "afpub~lock~", "afpub~tmp~",
-                "af~backup~", "af~lock~", "af~tmp~",
-            ]),
-            ("document", &[
-                "pdf", "doc", "docx", "odt", "rtf", "pages", "wpd", "wps", "abw",
-                "gdoc", "gdraw", "gform", "glink", "gmaillayout", "gmap", "gnote",
-                "gprj", "gscript", "gsheet", "gsite", "gslides", "gtable", "gvid",
-                "gcse", "gdrive", "gjam",
-                "docm", "dotm", "dotx", "dvi", "lpdf", "ofd", "ott", "pages-tef",
-                "pdfd", "rtfd", "sdw", "stw", "sxw", "xdv", "template",
-            ]),
+            (
+                "audio",
+                &[
+                    "mp3", "wav", "wave", "aac", "flac", "ogg", "m4a", "m4b", "wma", "aiff", "aif",
+                    "aifc", "alac", "opus", "ac3", "amr", "ape", "au", "caf", "dts", "m4r", "mka",
+                    "mp2", "ra", "snd", "wv", "weba", "aob", "it", "m2a", "mlp", "mod", "mp1",
+                    "mpa", "mpc", "oma", "rmi", "s3m", "spx", "voc", "vqf", "xa", "xm", "f4a",
+                    "f4b", "aa3", "acm", "pcm", "vox", "tak", "tta", "oga", "aa", "aax", "adts",
+                    "bwf", "cdda", "m4p", "mpga", "ram", "rmp", "sd2", "ul", "ulaw", "ulw",
+                ],
+            ),
+            (
+                "audio-project",
+                &[
+                    "aup", "aup3", "band", "logic", "logicx", "ptx", "ptf", "als", "flp", "rpp",
+                    "sesx", "mid", "midi", "cst", "dpst", "gbproj", "gchdb", "logikcs", "mwand",
+                    "patch", "pst", "sbk", "sdir", "kar", "smf",
+                ],
+            ),
+            (
+                "video",
+                &[
+                    "mp4", "avi", "mkv", "mov", "wmv", "flv", "webm", "m4v", "mpg", "mpeg", "3gp",
+                    "vob", "ogv", "mts", "m2ts", "divx", "asf", "f4v", "rm", "rmvb", "anx", "axa",
+                    "axv", "bik", "crf", "dvdmedia", "evo", "gxf", "m1v", "m2p", "m2t", "mt2s",
+                    "nsv", "nuv", "ogx", "rec", "tod", "tp", "vro", "wtv", "mk3d", "f4p", "3g2",
+                    "qt", "amv", "swf", "xvid", "yuv", "dv", "ogm", "dat", "mxf", "movpkg", "mcf",
+                    "mks", "ps", "3gp2", "3gpp", "avchd", "bdm", "bdmv", "dav", "dif", "flc",
+                    "fli", "m15", "m75", "mpe", "m2v", "mpg4", "qta", "sdv", "vfw", "wm",
+                ],
+            ),
+            (
+                "video-project",
+                &[
+                    "prproj",
+                    "fcpx",
+                    "fcpbundle",
+                    "imovieproject",
+                    "veg",
+                    "kdenlive",
+                    "mlt",
+                    "aep",
+                    "drp",
+                    "imovielibrary",
+                    "imovieevent",
+                    "imovietrailer",
+                    "imoviemobile",
+                    "cboard",
+                    "theater",
+                    "tvlibrary",
+                    "videoslibrary",
+                    "screenstudio",
+                    "screenstudiopreset",
+                ],
+            ),
+            (
+                "image",
+                &[
+                    "png",
+                    "jpg",
+                    "jpeg",
+                    "gif",
+                    "bmp",
+                    "tiff",
+                    "tif",
+                    "webp",
+                    "svg",
+                    "ico",
+                    "heic",
+                    "heif",
+                    "raw",
+                    "cr2",
+                    "nef",
+                    "arw",
+                    "dng",
+                    "orf",
+                    "rw2",
+                    "pef",
+                    "srw",
+                    "cr3",
+                    "icns",
+                    "pbm",
+                    "pgm",
+                    "ppm",
+                    "pnm",
+                    "tga",
+                    "exr",
+                    "hdr",
+                    "jp2",
+                    "jpx",
+                    "avif",
+                    "jxl",
+                    "3fr",
+                    "ari",
+                    "bay",
+                    "cap",
+                    "crw",
+                    "dcr",
+                    "dcs",
+                    "drf",
+                    "erf",
+                    "fff",
+                    "gpr",
+                    "iiq",
+                    "k25",
+                    "kdc",
+                    "lfp",
+                    "mdc",
+                    "mef",
+                    "mos",
+                    "mrw",
+                    "nefx",
+                    "nrw",
+                    "pxn",
+                    "r3d",
+                    "raf",
+                    "rwl",
+                    "sr2",
+                    "srf",
+                    "x3f",
+                    "eps",
+                    "hdp",
+                    "j2k",
+                    "jpegxr",
+                    "jxr",
+                    "wdp",
+                    "dxb",
+                    "fh10",
+                    "fh11",
+                    "abr",
+                    "aae",
+                    "xmp",
+                    "pvt",
+                    "slm",
+                    "aplibrary",
+                    "migratedaplibrary",
+                    "migratedphotolibrary",
+                    "photolibrary",
+                    "photosasset",
+                    "photoslibrary",
+                    "astc",
+                    "avci",
+                    "avcs",
+                    "cel",
+                    "cleanshot",
+                    "dds",
+                    "dib",
+                    "fpx",
+                    "heics",
+                    "heifs",
+                    "hif",
+                    "j2c",
+                    "jpe",
+                    "jpf",
+                    "ktx",
+                    "mpo",
+                    "pct",
+                    "pic",
+                    "pict",
+                    "pfm",
+                    "pntg",
+                    "pvr",
+                    "sgi",
+                    "svgz",
+                    "xbm",
+                    "photo booth",
+                ],
+            ),
+            (
+                "image-project",
+                &[
+                    "psd",
+                    "psb",
+                    "xcf",
+                    "ai",
+                    "sketch",
+                    "fig",
+                    "afdesign",
+                    "afphoto",
+                    "procreate",
+                    "af",
+                    "afassets",
+                    "afbrushes",
+                    "afextensiondocument",
+                    "affinity",
+                    "affinity_designer",
+                    "affinity_photo",
+                    "afluts",
+                    "afmacros",
+                    "afpackage",
+                    "afpub",
+                    "afstudio",
+                    "aftemplate",
+                    "persona",
+                    "psdt",
+                ],
+            ),
+            (
+                "image-project-backup",
+                &[
+                    "afdesign~backup~",
+                    "afdesign~lock~",
+                    "afdesign~tmp~",
+                    "affinity~backup~",
+                    "affinity~lock~",
+                    "affinity~tmp~",
+                    "afphoto~backup~",
+                    "afphoto~lock~",
+                    "afphoto~tmp~",
+                    "afpub~backup~",
+                    "afpub~lock~",
+                    "afpub~tmp~",
+                    "af~backup~",
+                    "af~lock~",
+                    "af~tmp~",
+                ],
+            ),
+            (
+                "document",
+                &[
+                    "pdf",
+                    "doc",
+                    "docx",
+                    "odt",
+                    "rtf",
+                    "pages",
+                    "wpd",
+                    "wps",
+                    "abw",
+                    "gdoc",
+                    "gdraw",
+                    "gform",
+                    "glink",
+                    "gmaillayout",
+                    "gmap",
+                    "gnote",
+                    "gprj",
+                    "gscript",
+                    "gsheet",
+                    "gsite",
+                    "gslides",
+                    "gtable",
+                    "gvid",
+                    "gcse",
+                    "gdrive",
+                    "gjam",
+                    "docm",
+                    "dotm",
+                    "dotx",
+                    "dvi",
+                    "lpdf",
+                    "ofd",
+                    "ott",
+                    "pages-tef",
+                    "pdfd",
+                    "rtfd",
+                    "sdw",
+                    "stw",
+                    "sxw",
+                    "xdv",
+                    "template",
+                ],
+            ),
             ("plain-text", &["txt", "text", "log", "nfo"]),
-            ("spreadsheet", &[
-                "xls", "xlsx", "csv", "tsv", "ods", "numbers",
-                "xlsb", "xlsm", "xlt", "xltx", "xlam",
-                "nmbtemplate", "numbers-tef", "xla", "xltm",
-            ]),
-            ("presentation", &[
-                "ppt", "pptx", "key", "odp",
-                "key-tef", "kpdc", "kpf", "kth", "pot", "potm", "potx",
-                "pps", "ppsm", "ppsx", "pptm",
-            ]),
-            ("email", &[
-                "eml", "emltpl", "mbox", "mime", "mme",
-                "olk15calattach", "olk15category", "olk15contact", "olk15event",
-                "olk15group", "olk15message", "olk15note", "olk15pref",
-                "olk15signature", "olk15task",
-                "eragesoundset", "rge",
-                "emlx", "emlxpart", "ewsmbox", "imapmbox",
-            ]),
-            ("contact", &[
-                "vcf", "abcdp", "ldif", "ldi", "abcdg", "abbu",
-                "persistentcardmodel",
-                "vcard",
-            ]),
-            ("productivity", &[
-                "ofocus", "ofocus-archive", "ofocus-backup", "ofocus-lock",
-                "ofocus-perspective", "omnifocusjs", "omnifocusjsz", "omnijs",
-                "omnijsz",
-            ]),
-            ("source-code", &[
-                "rs", "py", "js", "jsx", "tsx", "go", "java", "c", "cpp", "h",
-                "hpp", "rb", "php", "swift", "kt", "scala", "zig", "hs", "lua", "pl",
-                "pm", "r", "m", "mm", "cs", "fs", "ex", "exs", "clj", "erl", "elm",
-                "v", "vhdl", "sv", "ts", "sql", "css", "scss", "less", "sass",
-                "hh", "hxx", "h++", "cc", "cxx", "c++", "csx", "cls", "jav",
-                "mjs", "cjs", "cljs", "cljx", "clojure", "edn", "fsi", "fsx",
-                "fsscript", "coffee", "dart", "groovy", "vb", "ml", "mli", "pl6",
-                "pm6", "vue", "erb", "jade", "pug", "handlebars", "hbs", "ctp",
-                "dot", "pyi", "gemspec", "asp", "aspx", "cshtml", "jshtm", "jsp",
-                "phtml", "ascx",
-                "rkt", "scm", "gemfile", "xul", "shtml", "csh",
-                "javascript", "jscript",
-            ]),
-            ("web", &[
-                "html", "htm", "xhtml", "mhtml",
-                "jhtml", "xbl", "xht", "xhtm", "xsl", "xslt",
-                "mht", "shtm",
-            ]),
-            ("web-meta", &[
-                "download", "safariextz", "url", "webarchive", "webbookmark",
-                "webhistory", "webloc",
-                "crwebloc",
-            ]),
-            ("config", &[
-                "json", "yaml", "yml", "toml", "xml", "ini", "conf", "cfg", "plist",
-                "properties",
-                "prefpane", "sysprefex", "saver", "internetconnect",
-                "networkconnect", "rayconfig", "keyclu", "format", "rdf",
-                "pset",
-            ]),
-            ("archive", &[
-                "zip", "tar", "gz", "bz2", "xz", "7z", "rar", "tgz",
-                "lz", "zst", "lzma",
-                "iinaplgz", "appdownload",
-            ]),
+            (
+                "spreadsheet",
+                &[
+                    "xls",
+                    "xlsx",
+                    "csv",
+                    "tsv",
+                    "ods",
+                    "numbers",
+                    "xlsb",
+                    "xlsm",
+                    "xlt",
+                    "xltx",
+                    "xlam",
+                    "nmbtemplate",
+                    "numbers-tef",
+                    "xla",
+                    "xltm",
+                ],
+            ),
+            (
+                "presentation",
+                &[
+                    "ppt", "pptx", "key", "odp", "key-tef", "kpdc", "kpf", "kth", "pot", "potm",
+                    "potx", "pps", "ppsm", "ppsx", "pptm",
+                ],
+            ),
+            (
+                "email",
+                &[
+                    "eml",
+                    "emltpl",
+                    "mbox",
+                    "mime",
+                    "mme",
+                    "olk15calattach",
+                    "olk15category",
+                    "olk15contact",
+                    "olk15event",
+                    "olk15group",
+                    "olk15message",
+                    "olk15note",
+                    "olk15pref",
+                    "olk15signature",
+                    "olk15task",
+                    "eragesoundset",
+                    "rge",
+                    "emlx",
+                    "emlxpart",
+                    "ewsmbox",
+                    "imapmbox",
+                ],
+            ),
+            (
+                "contact",
+                &[
+                    "vcf",
+                    "abcdp",
+                    "ldif",
+                    "ldi",
+                    "abcdg",
+                    "abbu",
+                    "persistentcardmodel",
+                    "vcard",
+                ],
+            ),
+            (
+                "productivity",
+                &[
+                    "ofocus",
+                    "ofocus-archive",
+                    "ofocus-backup",
+                    "ofocus-lock",
+                    "ofocus-perspective",
+                    "omnifocusjs",
+                    "omnifocusjsz",
+                    "omnijs",
+                    "omnijsz",
+                ],
+            ),
+            (
+                "source-code",
+                &[
+                    "rs",
+                    "py",
+                    "js",
+                    "jsx",
+                    "tsx",
+                    "go",
+                    "java",
+                    "c",
+                    "cpp",
+                    "h",
+                    "hpp",
+                    "rb",
+                    "php",
+                    "swift",
+                    "kt",
+                    "scala",
+                    "zig",
+                    "hs",
+                    "lua",
+                    "pl",
+                    "pm",
+                    "r",
+                    "m",
+                    "mm",
+                    "cs",
+                    "fs",
+                    "ex",
+                    "exs",
+                    "clj",
+                    "erl",
+                    "elm",
+                    "v",
+                    "vhdl",
+                    "sv",
+                    "ts",
+                    "sql",
+                    "css",
+                    "scss",
+                    "less",
+                    "sass",
+                    "hh",
+                    "hxx",
+                    "h++",
+                    "cc",
+                    "cxx",
+                    "c++",
+                    "csx",
+                    "cls",
+                    "jav",
+                    "mjs",
+                    "cjs",
+                    "cljs",
+                    "cljx",
+                    "clojure",
+                    "edn",
+                    "fsi",
+                    "fsx",
+                    "fsscript",
+                    "coffee",
+                    "dart",
+                    "groovy",
+                    "vb",
+                    "ml",
+                    "mli",
+                    "pl6",
+                    "pm6",
+                    "vue",
+                    "erb",
+                    "jade",
+                    "pug",
+                    "handlebars",
+                    "hbs",
+                    "ctp",
+                    "dot",
+                    "pyi",
+                    "gemspec",
+                    "asp",
+                    "aspx",
+                    "cshtml",
+                    "jshtm",
+                    "jsp",
+                    "phtml",
+                    "ascx",
+                    "rkt",
+                    "scm",
+                    "gemfile",
+                    "xul",
+                    "shtml",
+                    "csh",
+                    "javascript",
+                    "jscript",
+                ],
+            ),
+            (
+                "web",
+                &[
+                    "html", "htm", "xhtml", "mhtml", "jhtml", "xbl", "xht", "xhtm", "xsl", "xslt",
+                    "mht", "shtm",
+                ],
+            ),
+            (
+                "web-meta",
+                &[
+                    "download",
+                    "safariextz",
+                    "url",
+                    "webarchive",
+                    "webbookmark",
+                    "webhistory",
+                    "webloc",
+                    "crwebloc",
+                ],
+            ),
+            (
+                "config",
+                &[
+                    "json",
+                    "yaml",
+                    "yml",
+                    "toml",
+                    "xml",
+                    "ini",
+                    "conf",
+                    "cfg",
+                    "plist",
+                    "properties",
+                    "prefpane",
+                    "sysprefex",
+                    "saver",
+                    "internetconnect",
+                    "networkconnect",
+                    "rayconfig",
+                    "keyclu",
+                    "format",
+                    "rdf",
+                    "pset",
+                ],
+            ),
+            (
+                "archive",
+                &[
+                    "zip",
+                    "tar",
+                    "gz",
+                    "bz2",
+                    "xz",
+                    "7z",
+                    "rar",
+                    "tgz",
+                    "lz",
+                    "zst",
+                    "lzma",
+                    "iinaplgz",
+                    "appdownload",
+                ],
+            ),
             ("installer", &["pkg", "deb", "rpm"]),
-            ("disk-image", &["dmg", "iso", "img", "sparseimage", "sparsebundle"]),
+            (
+                "disk-image",
+                &["dmg", "iso", "img", "sparseimage", "sparsebundle"],
+            ),
             ("vm-disk", &["vdi", "vmdk", "qcow2"]),
-            ("font", &[
-                "ttf", "otf", "woff", "woff2", "eot", "dfont", "ttc",
-                "otc", "sfont", "cfr",
-                "affont", "suit", "typeface-backup", "typeface-license",
-            ]),
-            ("3d-model", &[
-                "obj", "fbx", "stl", "3ds", "dae", "gltf", "glb", "usdz", "usd",
-                "usda", "usdc", "ply", "abc",
-                "mtlx",
-            ]),
+            (
+                "font",
+                &[
+                    "ttf",
+                    "otf",
+                    "woff",
+                    "woff2",
+                    "eot",
+                    "dfont",
+                    "ttc",
+                    "otc",
+                    "sfont",
+                    "cfr",
+                    "affont",
+                    "suit",
+                    "typeface-backup",
+                    "typeface-license",
+                ],
+            ),
+            (
+                "3d-model",
+                &[
+                    "obj", "fbx", "stl", "3ds", "dae", "gltf", "glb", "usdz", "usd", "usda",
+                    "usdc", "ply", "abc", "mtlx",
+                ],
+            ),
             ("3d-project", &["blend"]),
-            ("database", &[
-                "db", "sqlite", "sqlite3", "mdb", "accdb",
-                "kdbx", "musicdb", "musiclibrary", "tvdb",
-                "ite", "itl", "itlp",
-            ]),
-            ("ebook", &[
-                "epub", "mobi", "azw", "azw3", "fb2", "djvu", "cbr", "cbz", "help",
-                "book", "iba", "ibooks",
-            ]),
-            ("markdown", &[
-                "md", "markdown", "mdoc", "mdown", "mdtext", "mdtxt", "mdwn",
-                "mkd", "mkdn",
-            ]),
+            (
+                "database",
+                &[
+                    "db",
+                    "sqlite",
+                    "sqlite3",
+                    "mdb",
+                    "accdb",
+                    "kdbx",
+                    "musicdb",
+                    "musiclibrary",
+                    "tvdb",
+                    "ite",
+                    "itl",
+                    "itlp",
+                ],
+            ),
+            (
+                "ebook",
+                &[
+                    "epub", "mobi", "azw", "azw3", "fb2", "djvu", "cbr", "cbz", "help", "book",
+                    "iba", "ibooks",
+                ],
+            ),
+            (
+                "markdown",
+                &[
+                    "md", "markdown", "mdoc", "mdown", "mdtext", "mdtxt", "mdwn", "mkd", "mkdn",
+                ],
+            ),
             ("markup", &["rst", "adoc", "tex", "latex", "org", "rt"]),
-            ("script", &[
-                "sh", "bash", "zsh", "fish", "bat", "cmd", "ps1", "psm1",
-                "bash_login", "bash_logout", "bash_profile", "bashrc", "profile",
-                "zlogin", "zlogout", "zprofile", "zshenv", "zshrc",
-                "psgi", "t", "pod", "pp",
-                "workflow", "action", "caction", "definition", "command", "tool",
-                "shortcut", "wflow",
-            ]),
-            ("binary", &[
-                "app", "exe", "dll", "so", "dylib", "wasm", "class", "jar", "o", "a",
-            ]),
-            ("cad", &["dwg", "dxf", "step", "stp", "iges", "igs", "sat", "brep"]),
-            ("geospatial", &["shp", "geojson", "kml", "kmz", "gpx", "osm"]),
-            ("subtitle", &[
-                "aqt", "ass", "idx", "jss", "mpsub", "pjs", "smi", "srt", "ssa",
-                "sub", "usf", "utf",
-            ]),
-            ("playlist", &[
-                "b4s", "gvp", "sdp", "xspf", "cdg", "xesc",
-                "m3u8", "m3u", "pls", "cue",
-                "asx", "vlc",
-            ]),
-            ("devconfig", &[
-                "gitattributes", "gitconfig", "gitignore", "bowerrc", "config",
-                "editorconfig", "jscsrc", "jshintrc", "code-workspace", "csproj",
-                "dtd", "wxi", "wxl", "wxs", "xaml", "eyaml", "eyml", "cmake",
-                "makefile", "mk", "dockerfile", "containerfile", "gradle", "diff",
-                "lock", "ipynb", "xcodeproj", "xcworkspace", "psd1", "rhistory",
-                "rprofile",
-            ]),
+            (
+                "script",
+                &[
+                    "sh",
+                    "bash",
+                    "zsh",
+                    "fish",
+                    "bat",
+                    "cmd",
+                    "ps1",
+                    "psm1",
+                    "bash_login",
+                    "bash_logout",
+                    "bash_profile",
+                    "bashrc",
+                    "profile",
+                    "zlogin",
+                    "zlogout",
+                    "zprofile",
+                    "zshenv",
+                    "zshrc",
+                    "psgi",
+                    "t",
+                    "pod",
+                    "pp",
+                    "workflow",
+                    "action",
+                    "caction",
+                    "definition",
+                    "command",
+                    "tool",
+                    "shortcut",
+                    "wflow",
+                ],
+            ),
+            (
+                "binary",
+                &[
+                    "app", "exe", "dll", "so", "dylib", "wasm", "class", "jar", "o", "a",
+                ],
+            ),
+            (
+                "cad",
+                &["dwg", "dxf", "step", "stp", "iges", "igs", "sat", "brep"],
+            ),
+            (
+                "geospatial",
+                &["shp", "geojson", "kml", "kmz", "gpx", "osm"],
+            ),
+            (
+                "subtitle",
+                &[
+                    "aqt", "ass", "idx", "jss", "mpsub", "pjs", "smi", "srt", "ssa", "sub", "usf",
+                    "utf",
+                ],
+            ),
+            (
+                "playlist",
+                &[
+                    "b4s", "gvp", "sdp", "xspf", "cdg", "xesc", "m3u8", "m3u", "pls", "cue", "asx",
+                    "vlc",
+                ],
+            ),
+            (
+                "devconfig",
+                &[
+                    "gitattributes",
+                    "gitconfig",
+                    "gitignore",
+                    "bowerrc",
+                    "config",
+                    "editorconfig",
+                    "jscsrc",
+                    "jshintrc",
+                    "code-workspace",
+                    "csproj",
+                    "dtd",
+                    "wxi",
+                    "wxl",
+                    "wxs",
+                    "xaml",
+                    "eyaml",
+                    "eyml",
+                    "cmake",
+                    "makefile",
+                    "mk",
+                    "dockerfile",
+                    "containerfile",
+                    "gradle",
+                    "diff",
+                    "lock",
+                    "ipynb",
+                    "xcodeproj",
+                    "xcworkspace",
+                    "psd1",
+                    "rhistory",
+                    "rprofile",
+                ],
+            ),
             ("calendar", &["ics", "vcs", "icbu", "aplmodel", "vcal"]),
-            ("color-swatch", &["color", "palette", "ase", "clr", "snapshot"]),
-            ("plugin", &["iinaplugin", "mcpb", "skill", "dxt", "crx", "hvpl", "qtpxcomposition"]),
+            (
+                "color-swatch",
+                &["color", "palette", "ase", "clr", "snapshot"],
+            ),
+            (
+                "plugin",
+                &[
+                    "iinaplugin",
+                    "mcpb",
+                    "skill",
+                    "dxt",
+                    "crx",
+                    "hvpl",
+                    "qtpxcomposition",
+                ],
+            ),
             ("game-notation", &["game", "pgn"]),
-            ("notes", &[
-                "fdf", "notesairdropdocument", "notesarchive", "skim",
-                "stickiesappexport",
-            ]),
+            (
+                "notes",
+                &[
+                    "fdf",
+                    "notesairdropdocument",
+                    "notesarchive",
+                    "skim",
+                    "stickiesappexport",
+                ],
+            ),
             ("backup", &["enex", "journalarchive", "structuredbackup"]),
-            ("app-specific", &[
-                "daisydisk", "gpscan", "navtrace",
-            ]),
+            ("app-specific", &["daisydisk", "gpscan", "navtrace"]),
         ];
 
         let mut stmt = self.conn.prepare(
@@ -380,7 +865,11 @@ impl Database {
         rows.collect()
     }
 
-    pub fn get_groups(&self, app_filter_id: Option<i64>, assigned_only: bool) -> Result<Vec<Group>> {
+    pub fn get_groups(
+        &self,
+        app_filter_id: Option<i64>,
+        assigned_only: bool,
+    ) -> Result<Vec<Group>> {
         let mut groups = Vec::new();
 
         // Only include "Ungrouped" when not filtering by app
@@ -480,33 +969,33 @@ impl Database {
             }
             Some(gid) => {
                 let group = self.conn.query_row(
-                "SELECT g.id, g.name, g.assigned_app_id, a.name,
+                    "SELECT g.id, g.name, g.assigned_app_id, a.name,
                         (SELECT COUNT(*) FROM extensions WHERE group_id = g.id)
                  FROM groups g LEFT JOIN apps a ON a.id = g.assigned_app_id
                  WHERE g.id = ?1",
-                params![gid],
-                |r| {
-                    Ok(Group {
-                        id: r.get(0)?,
-                        name: r.get(1)?,
-                        assigned_app_id: r.get(2)?,
-                        assigned_app_name: r.get(3)?,
-                        ext_count: r.get(4)?,
-                    })
-                },
-            )?;
-            let mut stmt = self.conn.prepare(
+                    params![gid],
+                    |r| {
+                        Ok(Group {
+                            id: r.get(0)?,
+                            name: r.get(1)?,
+                            assigned_app_id: r.get(2)?,
+                            assigned_app_name: r.get(3)?,
+                            ext_count: r.get(4)?,
+                        })
+                    },
+                )?;
+                let mut stmt = self.conn.prepare(
                 "SELECT ext, group_id, description FROM extensions WHERE group_id = ?1 ORDER BY ext",
             )?;
-            let exts: Vec<Extension> = stmt
-                .query_map(params![gid], |r| {
-                    Ok(Extension {
-                        ext: r.get(0)?,
-                        group_id: r.get(1)?,
-                        description: r.get(2)?,
-                    })
-                })?
-                .collect::<Result<_>>()?;
+                let exts: Vec<Extension> = stmt
+                    .query_map(params![gid], |r| {
+                        Ok(Extension {
+                            ext: r.get(0)?,
+                            group_id: r.get(1)?,
+                            description: r.get(2)?,
+                        })
+                    })?
+                    .collect::<Result<_>>()?;
                 (group, exts)
             }
         };
@@ -626,22 +1115,22 @@ impl Database {
     }
 
     pub fn get_common_apps_for_app(&self, app_id: i64) -> Result<Vec<App>> {
-        // Get all group IDs assigned to this app
+        // Get all extensions this app supports
         let mut stmt = self
             .conn
-            .prepare("SELECT id FROM groups WHERE assigned_app_id = ?1")?;
-        let group_ids: Vec<i64> = stmt
-            .query_map(params![app_id], |r| r.get::<_, i64>(0))?
+            .prepare("SELECT ext FROM ext_apps WHERE app_id = ?1")?;
+        let exts: Vec<String> = stmt
+            .query_map(params![app_id], |r| r.get::<_, String>(0))?
             .collect::<Result<_>>()?;
 
-        if group_ids.is_empty() {
+        if exts.is_empty() {
             return Ok(Vec::new());
         }
 
-        // Intersect common_apps across all groups
+        // Find apps that support ALL of these extensions
         let mut common: Option<HashSet<i64>> = None;
-        for gid in &group_ids {
-            let apps = self.compute_common_apps_set(*gid)?;
+        for ext in &exts {
+            let apps = self.get_apps_for_ext(ext)?;
             common = Some(match common {
                 None => apps,
                 Some(c) => c.intersection(&apps).copied().collect(),
@@ -821,16 +1310,19 @@ impl Database {
         let mut fixed = 0;
         for gid in &group_ids {
             // Pick the app that is the system default for the most extensions in this group
-            let best: Option<(i64, String)> = self.conn.query_row(
-                "SELECT e.default_app_id, a.name FROM extensions e
+            let best: Option<(i64, String)> = self
+                .conn
+                .query_row(
+                    "SELECT e.default_app_id, a.name FROM extensions e
                  JOIN apps a ON a.id = e.default_app_id
                  WHERE e.group_id = ?1 AND e.default_app_id IS NOT NULL
                  GROUP BY e.default_app_id
                  ORDER BY COUNT(*) DESC, a.name ASC
                  LIMIT 1",
-                params![gid],
-                |r| Ok((r.get(0)?, r.get(1)?)),
-            ).optional()?;
+                    params![gid],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .optional()?;
 
             if let Some((app_id, _)) = best {
                 self.conn.execute(
@@ -1054,7 +1546,6 @@ impl Database {
         Ok(())
     }
 }
-
 
 fn deduplicate_name(base: &str, used: &HashSet<String>) -> String {
     let lower = base.to_lowercase();
