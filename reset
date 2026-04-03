@@ -1,0 +1,3 @@
+#!/bin/sh
+rm -f "$HOME/Library/Application Support/com.devbox.filetypegroups/file-type-groups.db"
+echo "Database removed. Next launch will start fresh."

@@ -1,0 +1,11 @@
+[tasks.dev]
+description = "Run in dev mode"
+run = "cargo tauri dev"
+
+[tasks.build]
+description = "Build"
+run = "cargo tauri build"
+
+[tasks.reset]
+description = "Reset database"
+run = "./reset"
