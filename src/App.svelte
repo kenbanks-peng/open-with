@@ -519,18 +519,16 @@
 				<div class="panel-body" bind:this={panelBodyEls.apps}>
 					<button
 						class="app-item"
-						class:selected={selectedAppId === null}
-						class:cursor={focusedPanel === 'apps' && appCursor === 0}
-						onclick={() => { selectApp(null); appCursor = 0; }}
+						class:cursor={appCursor === 0}
+						onclick={() => { focusedPanel = 'apps'; selectApp(null); appCursor = 0; }}
 					>
 						All
 					</button>
 					{#each sortedApps as app, i (app.id)}
 						<button
 							class="app-item"
-							class:selected={selectedAppId === app.id}
-							class:cursor={focusedPanel === 'apps' && appCursor === i + 1}
-							onclick={() => { selectApp(app.id); appCursor = i + 1; }}
+							class:cursor={appCursor === i + 1}
+							onclick={() => { focusedPanel = 'apps'; selectApp(app.id); appCursor = i + 1; }}
 						>
 							<span class="app-name">{app.name}</span>
 							<span class="badge">{app.ext_count}</span>
@@ -557,14 +555,13 @@
 					{#each sortedGroups as group, i (group.id)}
 						<div
 							class="group-item"
-							class:selected={selectedGroupId === group.id}
-							class:cursor={focusedPanel === 'groups' && groupCursor === i}
+							class:cursor={groupCursor === i}
 							class:drop-valid={dragExts.length > 0 && dropValid[group.id] === true}
 							class:drop-invalid={dragExts.length > 0 && dropValid[group.id] === false}
 							role="option"
 							aria-selected={selectedGroupId === group.id}
 							tabindex="0"
-							onclick={() => { selectGroup(group.id); groupCursor = i; }}
+							onclick={() => { focusedPanel = 'groups'; selectGroup(group.id); groupCursor = i; }}
 							onkeydown={(e: KeyboardEvent) => e.key === 'Enter' && selectGroup(group.id)}
 							ondragover={(e: DragEvent) => onDragOverGroup(e, group.id)}
 							ondrop={(e: DragEvent) => onDropGroup(e, group.id)}
@@ -581,9 +578,9 @@
 								<div class="group-info">
 									<span
 										class="group-name"
+										class:muted={selectedAppId !== null && group.assigned_app_id !== selectedAppId}
 										role="button"
 										tabindex="0"
-										style:color={selectedAppId !== null && group.assigned_app_id !== selectedAppId ? 'var(--text-muted)' : 'var(--text-primary)'}
 										ondblclick={() => group.id !== -1 && startRename(group)}
 										onkeydown={(e: KeyboardEvent) => e.key === 'F2' && group.id !== -1 && startRename(group)}
 									>
@@ -591,7 +588,7 @@
 									</span>
 									<span class="group-meta">
 										{#if group.assigned_app_name}
-											<span class="assigned" style:color={selectedAppId !== null && group.assigned_app_id !== selectedAppId ? 'var(--text-muted)' : 'var(--success)'}>{group.assigned_app_name}</span>
+											<span class="assigned" class:muted={selectedAppId !== null && group.assigned_app_id !== selectedAppId}>{group.assigned_app_name}</span>
 										{:else if group.id !== -1}
 											<span class="unassigned">unassigned</span>
 										{/if}
@@ -643,12 +640,12 @@
 							<div
 								class="ext-item"
 								class:selected={selectedExts.has(ext.ext)}
-								class:cursor={focusedPanel === 'extensions' && extCursor === i}
+								class:cursor={extCursor === i}
 								draggable="true"
 								role="option"
 								aria-selected={selectedExts.has(ext.ext)}
 								tabindex="0"
-								onclick={(e: MouseEvent) => { toggleExt(ext.ext, e); extCursor = i; refreshExtApps(); }}
+								onclick={(e: MouseEvent) => { focusedPanel = 'extensions'; toggleExt(ext.ext, e); extCursor = i; refreshExtApps(); }}
 								onkeydown={(e: KeyboardEvent) => e.key === 'Enter' && toggleExt(ext.ext, e as unknown as MouseEvent)}
 								ondragstart={onDragStart}
 								ondragend={onDragEnd}
@@ -738,9 +735,44 @@
 		border-bottom-color: var(--accent);
 	}
 
+	.panel-focused .app-item.cursor,
+	.panel-focused .group-item.cursor,
+	.panel-focused .ext-item.cursor,
+	.panel-focused .cursor {
+		background: var(--ctp-blue);
+		color: var(--ctp-crust);
+	}
+
+	.panel-focused .cursor .group-name,
+	.panel-focused .cursor .assigned,
+	.panel-focused .cursor .unassigned,
+	.panel-focused .cursor .badge,
+	.panel-focused .cursor .delete-btn,
+	.panel-focused .cursor .ext-name,
+	.panel-focused .cursor .ext-desc {
+		color: inherit;
+	}
+
+	.group-item.cursor,
+	.ext-item.cursor,
+	.app-item.cursor,
 	.cursor {
-		outline: 1px solid var(--accent);
-		outline-offset: -1px;
+		background: var(--ctp-surface1);
+		color: var(--text-primary);
+	}
+
+	.cursor .group-name,
+	.cursor .assigned,
+	.cursor .unassigned,
+	.cursor .badge,
+	.cursor .delete-btn,
+	.cursor .ext-name,
+	.cursor .ext-desc {
+		color: inherit;
+	}
+
+	.cursor .badge {
+		background: transparent;
 	}
 
 	.panel:last-child {
@@ -852,9 +884,18 @@
 		background: var(--item-hover);
 	}
 
-	.app-item.selected,
-	.group-item.selected {
-		background: var(--item-selected);
+	.ext-item.selected {
+		background: var(--ctp-surface1);
+	}
+
+	.panel-focused .ext-item.selected {
+		background: var(--ctp-blue);
+		color: var(--ctp-crust);
+	}
+
+	.panel-focused .ext-item.selected .ext-name,
+	.panel-focused .ext-item.selected .ext-desc {
+		color: inherit;
 	}
 
 	.group-item.drop-valid {
@@ -883,6 +924,10 @@
 
 	.group-meta {
 		font-size: 11px;
+	}
+
+	.muted {
+		color: var(--text-muted);
 	}
 
 	.assigned {
