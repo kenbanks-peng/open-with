@@ -631,9 +631,11 @@
 								{/each}
 							</select>
 						{/if}
-						{#if groupDetail.group.id !== -1 && groupDetail.extensions.length > 1}
-							<button onclick={() => onBreakout(groupDetail!.group.id)} title="Split into sub-groups by app compatibility">Breakout</button>
-						{/if}
+						<button
+							onclick={() => onBreakout(groupDetail!.group.id)}
+							title="Split into sub-groups by app compatibility"
+							style:visibility={groupDetail.group.id !== -1 && groupDetail.extensions.length > 1 ? 'visible' : 'hidden'}
+						>Breakout</button>
 					</div>
 					<div class="panel-body" bind:this={panelBodyEls.extensions}>
 						{#each groupDetail.extensions as ext, i (ext.ext)}
