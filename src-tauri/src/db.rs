@@ -258,14 +258,17 @@ impl Database {
             .collect();
         let sql = format!(
             "SELECT a.id, a.name, a.path,
-                    (SELECT COUNT(*) FROM extensions WHERE default_app_id = a.id) as ext_count
+                    (SELECT COUNT(DISTINCT ea2.ext) FROM ext_apps ea2
+                     WHERE ea2.app_id = a.id
+                       AND ea2.ext IN (SELECT ext FROM extensions WHERE default_app_id = ?{})) as ext_count
              FROM apps a
              JOIN ext_apps ea ON ea.app_id = a.id
              WHERE ea.ext IN ({})
                AND (?{} IS NULL OR a.id != ?{})
              GROUP BY a.id
              HAVING COUNT(DISTINCT ea.ext) = ?{}
-             ORDER BY a.name COLLATE NOCASE",
+             ORDER BY ext_count DESC, a.name COLLATE NOCASE",
+            exts.len() + 1,
             placeholders.join(","),
             exts.len() + 1,
             exts.len() + 1,

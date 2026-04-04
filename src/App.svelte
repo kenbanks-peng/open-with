@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from "svelte";
+	import { onMount, tick } from "svelte";
 	import {
 		getApps,
 		getExtensionsForApp,
@@ -17,6 +17,8 @@
 	let apps: App[] = $state([]);
 	let allExtensions: Extension[] = $state([]);
 	let extensions: Extension[] = $state([]);
+	let targetExtensions: Extension[] = $state([]);
+	let lockedExtensions: Extension[] | null = $state(null);
 	let candidateTargets: App[] = $state([]);
 	let filteredTargets: App[] = $state([]);
 	let eligibleExts: Set<string> = $state(new Set());
@@ -29,12 +31,14 @@
 
 	let appSort = $state<"alpha" | "ext_count">("ext_count");
 	let loading = $state(true);
+	let browseAll = $state(false);
+	let targetFilter = $state("");
+	let allApps: App[] = $state([]);
+	let targetFilterInputEl: HTMLInputElement | undefined = $state(undefined);
 
 	type Panel = "apps" | "extensions" | "targets";
 	let focusedPanel: Panel = $state("apps");
-	let appCursor = $state(0);
 	let extCursor = $state(0);
-	let targetCursor = $state(0);
 
 	let extFilterInputEl: HTMLInputElement | undefined = $state(undefined);
 	let panelBodyEls: Record<Panel, HTMLElement | undefined> = $state({
@@ -43,19 +47,30 @@
 		targets: undefined,
 	});
 
-	let activeExtensions = $derived(extFilter ? allExtensions : extensions);
+	let filteredExtensions = $derived.by(() => {
+		if (lockedExtensions !== null) return lockedExtensions;
 
-	let filteredExtensions = $derived(
-		extFilter
-			? activeExtensions.filter(
-					(e) =>
-						e.ext.includes(extFilter.toLowerCase()) ||
-						e.description
-							.toLowerCase()
-							.includes(extFilter.toLowerCase()),
-				)
-			: activeExtensions,
-	);
+		let base: Extension[];
+		if (extFilter) {
+			base = allExtensions;
+		} else if (eligibleExts.size > 0) {
+			base = extensions.filter((e) => eligibleExts.has(e.ext));
+		} else if (selectedTargetId !== null) {
+			base = [];
+		} else {
+			base = extensions;
+		}
+
+		if (extFilter) {
+			const q = extFilter.toLowerCase();
+			return base.filter(
+				(e) =>
+					e.ext.includes(q) ||
+					e.description.toLowerCase().includes(q),
+			);
+		}
+		return base;
+	});
 
 	let visibleApps = $derived.by(() => {
 		if (!extFilter) return apps;
@@ -73,16 +88,24 @@
 			: [...visibleApps].sort((a, b) => b.ext_count - a.ext_count),
 	);
 
-	let sortedExtensions = $derived(
-		selectedTargetId !== null
-			? [...filteredExtensions].sort((a, b) => {
-					const aEligible = eligibleExts.has(a.ext) ? 0 : 1;
-					const bEligible = eligibleExts.has(b.ext) ? 0 : 1;
-					if (aEligible !== bEligible) return aEligible - bEligible;
-					return a.ext.localeCompare(b.ext);
-				})
-			: filteredExtensions,
+	let sortedExtensions = $derived(filteredExtensions);
+
+	let appCursor = $derived(
+		selectedSourceId !== null
+			? Math.max(0, sortedApps.findIndex((a) => a.id === selectedSourceId))
+			: 0,
 	);
+
+	let displayedTargets = $derived.by(() => {
+		if (!browseAll) return filteredTargets;
+		const src = selectedSourceId;
+		const list = allApps.filter((a) => a.id !== src);
+		if (!targetFilter) return list;
+		const q = targetFilter.toLowerCase();
+		return list.filter((a) => a.name.toLowerCase().includes(q));
+	});
+
+	let targetCursor = $state(0);
 
 	let selectedOwnerAppIds = $derived.by(() => {
 		if (selectedExts.size === 0) return new Set<number>();
@@ -94,16 +117,6 @@
 		}
 		return ids;
 	});
-
-	let greyedExts = $derived(
-		selectedTargetId !== null
-			? new Set(
-					extensions
-						.filter((e) => !eligibleExts.has(e.ext))
-						.map((e) => e.ext),
-				)
-			: new Set<string>(),
-	);
 
 	async function refresh() {
 		const [a, all, s] = await Promise.all([
@@ -120,7 +133,6 @@
 		loading = true;
 		await refresh();
 		if (sortedApps.length > 0) {
-			appCursor = 0;
 			await selectSource(sortedApps[0].id);
 		}
 		loading = false;
@@ -130,13 +142,46 @@
 		init();
 	});
 
+	async function toggleAppSort() {
+		const body = panelBodyEls.apps;
+		let relativeOffset: number | null = null;
+		const active = body?.querySelector(".app-item.active") as
+			| HTMLElement
+			| null;
+
+		if (body && active) {
+			const bodyRect = body.getBoundingClientRect();
+			const childRect = active.getBoundingClientRect();
+			relativeOffset = childRect.top - bodyRect.top;
+		}
+
+		appSort = appSort === "alpha" ? "ext_count" : "alpha";
+
+		if (body && relativeOffset !== null) {
+			await tick();
+			const active = body.querySelector(".app-item.active") as
+				| HTMLElement
+				| null;
+			if (active) {
+				const bodyRect = body.getBoundingClientRect();
+				const childRect = active.getBoundingClientRect();
+				body.scrollTop +=
+					childRect.top - bodyRect.top - relativeOffset;
+			}
+		}
+	}
+
 	async function selectSource(appId: number | null) {
 		selectedSourceId = appId;
 		selectedTargetId = null;
 		selectedExts = new Set();
 		eligibleExts = new Set();
+		targetExtensions = [];
+		lockedExtensions = null;
 		extCursor = 0;
 		targetCursor = 0;
+		browseAll = false;
+		targetFilter = "";
 
 		if (appId !== null) {
 			const [exts, targets] = await Promise.all([
@@ -158,9 +203,7 @@
 		selectedSourceId = appId;
 		selectedTargetId = null;
 		eligibleExts = new Set();
-		targetCursor = 0;
-		const appIdx = sortedApps.findIndex((a) => a.id === appId);
-		if (appIdx >= 0) appCursor = appIdx;
+		targetExtensions = [];
 
 		const [exts, targets] = await Promise.all([
 			getExtensionsForApp(appId),
@@ -175,17 +218,15 @@
 		selectedTargetId = appId;
 
 		if (appId !== null && selectedSourceId !== null) {
-			const eligible = await getEligibleExtensions(
-				selectedSourceId,
-				appId,
-			);
+			const [eligible, tExts] = await Promise.all([
+				getEligibleExtensions(selectedSourceId, appId),
+				getExtensionsForApp(appId),
+			]);
 			eligibleExts = new Set(eligible);
-			const next = new Set(
-				[...selectedExts].filter((ext) => eligible.includes(ext)),
-			);
-			selectedExts = next;
+			if (!browseAll) targetExtensions = tExts;
 		} else {
 			eligibleExts = new Set();
+			if (!browseAll) targetExtensions = [];
 		}
 	}
 
@@ -199,8 +240,6 @@
 	}
 
 	async function toggleExt(ext: string, event: MouseEvent) {
-		if (greyedExts.has(ext)) return;
-
 		const extData = sortedExtensions.find((e) => e.ext === ext);
 		if (extData) await ensureSource(extData);
 
@@ -209,9 +248,7 @@
 			if (next.has(ext)) next.delete(ext);
 			else next.add(ext);
 		} else if (event.shiftKey) {
-			const allExts = sortedExtensions
-				.filter((e) => !greyedExts.has(e.ext))
-				.map((e) => e.ext);
+			const allExts = sortedExtensions.map((e) => e.ext);
 			const lastSelected = [...selectedExts].pop();
 			if (lastSelected) {
 				const from = allExts.indexOf(lastSelected);
@@ -222,14 +259,20 @@
 				next.add(ext);
 			}
 		} else {
-			next.clear();
-			next.add(ext);
+			if (next.size === 1 && next.has(ext)) {
+				next.clear();
+			} else {
+				next.clear();
+				next.add(ext);
+			}
 		}
 		selectedExts = next;
 		await refreshTargets(next);
 	}
 
 	async function refreshTargets(exts: Set<string>) {
+		const prevTargetId = displayedTargets[targetCursor]?.id ?? null;
+
 		if (exts.size > 0 && selectedSourceId !== null) {
 			filteredTargets = await getAppsForExtensions(
 				[...exts],
@@ -237,6 +280,8 @@
 			);
 		} else {
 			filteredTargets = candidateTargets;
+			selectedTargetId = null;
+			eligibleExts = new Set();
 		}
 		// If current target is no longer valid, deselect it
 		if (
@@ -246,14 +291,36 @@
 			selectedTargetId = null;
 			eligibleExts = new Set();
 		}
+		// Preserve cursor position by app id, or clamp
+		if (prevTargetId !== null) {
+			const idx = displayedTargets.findIndex((a) => a.id === prevTargetId);
+			targetCursor = idx >= 0 ? idx : Math.min(targetCursor, Math.max(0, displayedTargets.length - 1));
+		} else {
+			targetCursor = Math.min(targetCursor, Math.max(0, displayedTargets.length - 1));
+		}
+	}
+
+	async function toggleBrowseAll() {
+		browseAll = !browseAll;
+		targetFilter = "";
+
+		if (browseAll) {
+			lockedExtensions = [...sortedExtensions];
+			if (allApps.length === 0) {
+				allApps = await getApps();
+			}
+		} else {
+			lockedExtensions = null;
+		}
+
+		selectedTargetId = null;
+		eligibleExts = new Set();
+		await tick();
+		if (browseAll) targetFilterInputEl?.focus();
 	}
 
 	function selectAllEligible() {
-		if (selectedTargetId === null) {
-			selectedExts = new Set(extensions.map((e) => e.ext));
-		} else {
-			selectedExts = new Set(eligibleExts);
-		}
+		selectedExts = new Set(sortedExtensions.map((e) => e.ext));
 	}
 
 	async function doReassign() {
@@ -275,7 +342,7 @@
 	function panelListLength(panel: Panel): number {
 		if (panel === "apps") return sortedApps.length;
 		if (panel === "extensions") return sortedExtensions.length;
-		if (panel === "targets") return filteredTargets.length;
+		if (panel === "targets") return displayedTargets.length;
 		return 0;
 	}
 
@@ -285,20 +352,10 @@
 		return targetCursor;
 	}
 
-	function setCursor(panel: Panel, val: number) {
-		if (panel === "apps") appCursor = val;
-		else if (panel === "extensions") extCursor = val;
-		else targetCursor = val;
-	}
-
-	function clampCursor(panel: Panel) {
-		const len = panelListLength(panel);
-		const cur = cursorFor(panel);
-		if (len === 0) {
-			setCursor(panel, 0);
-		} else if (cur >= len) {
-			setCursor(panel, len - 1);
-		}
+	function clampExtCursor() {
+		const len = sortedExtensions.length;
+		if (len === 0) extCursor = 0;
+		else if (extCursor >= len) extCursor = len - 1;
 	}
 
 	function scrollCursorIntoView(panel: Panel) {
@@ -318,20 +375,27 @@
 		});
 	}
 
-	async function selectAtCursor() {
-		if (focusedPanel === "apps") {
-			if (appCursor < sortedApps.length) {
-				const appId = sortedApps[appCursor].id;
-				if (extFilter) {
-					await switchSourceKeepState(appId);
-				} else {
-					await selectSource(appId);
-				}
+	async function selectPanelItem(panel: Panel, index: number) {
+		if (panel === "apps") {
+			const appId = sortedApps[index]?.id;
+			if (appId !== undefined) {
+				if (extFilter) await switchSourceKeepState(appId);
+				else await selectSource(appId);
 			}
-		} else if (focusedPanel === "targets") {
-			if (targetCursor < filteredTargets.length) {
-				await selectTarget(filteredTargets[targetCursor].id);
+		} else if (panel === "extensions") {
+			const extData = sortedExtensions[index];
+			if (extData) {
+				extCursor = index;
+				await ensureSource(extData);
+				const next = new Set<string>();
+				next.add(extData.ext);
+				selectedExts = next;
+				await refreshTargets(next);
 			}
+		} else if (panel === "targets") {
+			targetCursor = index;
+			const appId = displayedTargets[index]?.id;
+			if (appId !== undefined) await selectTarget(appId);
 		}
 	}
 
@@ -341,65 +405,69 @@
 
 		switch (action) {
 			case "focus_left":
-				if (panelIdx > 0) focusedPanel = panels[panelIdx - 1];
-				clampCursor(focusedPanel);
+				if (panelIdx > 0) {
+					focusedPanel = panels[panelIdx - 1];
+					if (focusedPanel === "extensions") {
+						clampExtCursor();
+						await selectPanelItem("extensions", extCursor);
+					}
+				}
 				break;
 			case "focus_right":
-				if (panelIdx < panels.length - 1)
+				if (panelIdx < panels.length - 1) {
 					focusedPanel = panels[panelIdx + 1];
-				clampCursor(focusedPanel);
+					if (focusedPanel === "extensions") {
+						clampExtCursor();
+						await selectPanelItem("extensions", extCursor);
+					} else if (focusedPanel === "targets") {
+						const idx = cursorFor("targets");
+						await selectPanelItem("targets", idx);
+					}
+				}
 				break;
 
 			case "move_down": {
 				const len = panelListLength(focusedPanel);
 				const cur = cursorFor(focusedPanel);
 				if (cur < len - 1) {
-					setCursor(focusedPanel, cur + 1);
+					await selectPanelItem(focusedPanel, cur + 1);
 					scrollCursorIntoView(focusedPanel);
-					if (
-						focusedPanel === "apps" ||
-						focusedPanel === "targets"
-					)
-						await selectAtCursor();
 				}
 				break;
 			}
 			case "move_up": {
 				const cur = cursorFor(focusedPanel);
 				if (cur > 0) {
-					setCursor(focusedPanel, cur - 1);
+					await selectPanelItem(focusedPanel, cur - 1);
 					scrollCursorIntoView(focusedPanel);
-					if (
-						focusedPanel === "apps" ||
-						focusedPanel === "targets"
-					)
-						await selectAtCursor();
 				}
 				break;
 			}
-			case "move_top":
-				setCursor(focusedPanel, 0);
+			case "move_top": {
+				await selectPanelItem(focusedPanel, 0);
 				scrollCursorIntoView(focusedPanel);
-				if (focusedPanel === "apps" || focusedPanel === "targets")
-					await selectAtCursor();
 				break;
+			}
 			case "move_bottom": {
 				const len = panelListLength(focusedPanel);
-				if (len > 0) setCursor(focusedPanel, len - 1);
+				if (len > 0) {
+					await selectPanelItem(focusedPanel, len - 1);
+				}
 				scrollCursorIntoView(focusedPanel);
-				if (focusedPanel === "apps" || focusedPanel === "targets")
-					await selectAtCursor();
 				break;
 			}
 
 			case "select":
-				await selectAtCursor();
+				await selectPanelItem(
+					focusedPanel,
+					cursorFor(focusedPanel),
+				);
 				break;
 
 			case "toggle_select":
 				if (focusedPanel === "extensions") {
 					const extData = sortedExtensions[extCursor];
-					if (extData && !greyedExts.has(extData.ext)) {
+					if (extData) {
 						await ensureSource(extData);
 						const next = new Set(selectedExts);
 						if (next.has(extData.ext)) next.delete(extData.ext);
@@ -413,7 +481,7 @@
 			case "extend_down":
 				if (focusedPanel === "extensions") {
 					const extData = sortedExtensions[extCursor];
-					if (extData && !greyedExts.has(extData.ext)) {
+					if (extData) {
 						await ensureSource(extData);
 						const next = new Set(selectedExts);
 						next.add(extData.ext);
@@ -422,7 +490,7 @@
 					if (extCursor < sortedExtensions.length - 1) {
 						extCursor++;
 						const nextData = sortedExtensions[extCursor];
-						if (nextData && !greyedExts.has(nextData.ext)) {
+						if (nextData) {
 							const next2 = new Set(selectedExts);
 							next2.add(nextData.ext);
 							selectedExts = next2;
@@ -436,7 +504,7 @@
 			case "extend_up":
 				if (focusedPanel === "extensions") {
 					const extData = sortedExtensions[extCursor];
-					if (extData && !greyedExts.has(extData.ext)) {
+					if (extData) {
 						await ensureSource(extData);
 						const next = new Set(selectedExts);
 						next.add(extData.ext);
@@ -445,7 +513,7 @@
 					if (extCursor > 0) {
 						extCursor--;
 						const nextData = sortedExtensions[extCursor];
-						if (nextData && !greyedExts.has(nextData.ext)) {
+						if (nextData) {
 							const next2 = new Set(selectedExts);
 							next2.add(nextData.ext);
 							selectedExts = next2;
@@ -525,9 +593,7 @@
 					<h2>Apps</h2>
 					<button
 						class="sort-toggle"
-						onclick={() =>
-							(appSort =
-								appSort === "alpha" ? "ext_count" : "alpha")}
+						onclick={toggleAppSort}
 						title={appSort === "alpha"
 							? "Sorted A-Z; click to sort by default count"
 							: "Sorted by default count; click to sort A-Z"}
@@ -544,7 +610,6 @@
 							class:owner-highlight={selectedOwnerAppIds.has(app.id)}
 							onclick={() => {
 								focusedPanel = "apps";
-								appCursor = i;
 								if (extFilter) {
 									switchSourceKeepState(app.id);
 								} else {
@@ -582,11 +647,9 @@
 							>&times;</button>
 						{/if}
 					</div>
-					{#if selectedTargetId !== null}
-						<button onclick={selectAllEligible}>
-							Select All ({eligibleExts.size})
-						</button>
-					{/if}
+					<button onclick={selectAllEligible}>
+						Select All ({sortedExtensions.length})
+					</button>
 				</div>
 				<div class="panel-body" bind:this={panelBodyEls.extensions}>
 					{#each sortedExtensions as ext, i (ext.ext)}
@@ -594,7 +657,6 @@
 							class="ext-item"
 							class:selected={selectedExts.has(ext.ext)}
 							class:cursor={extCursor === i}
-							class:greyed={greyedExts.has(ext.ext)}
 							role="option"
 							aria-selected={selectedExts.has(ext.ext)}
 							tabindex="0"
@@ -631,7 +693,7 @@
 					{@const sourceApp = apps.find(
 						(a) => a.id === selectedSourceId,
 					)}
-					{@const targetApp = filteredTargets.find(
+					{@const targetApp = displayedTargets.find(
 						(a) => a.id === selectedTargetId,
 					)}
 					<div class="reassign-bar">
@@ -652,12 +714,30 @@
 				>
 					<div class="panel-header">
 						<h2>Reassign To</h2>
+						{#if browseAll}
+							<div class="search-box">
+								<input
+									type="text"
+									placeholder="Filter apps..."
+									bind:value={targetFilter}
+									bind:this={targetFilterInputEl}
+								/>
+								{#if targetFilter}
+									<button class="search-clear" onclick={() => { targetFilter = ""; targetFilterInputEl?.focus(); }}>&times;</button>
+								{/if}
+							</div>
+						{/if}
+						<button
+							class="any-toggle"
+							class:any-active={browseAll}
+							onclick={toggleBrowseAll}
+						>any</button>
 					</div>
 					<div
 						class="panel-body"
 						bind:this={panelBodyEls.targets}
 					>
-						{#each filteredTargets as app, i (app.id)}
+						{#each displayedTargets as app, i (app.id)}
 							<button
 								class="app-item"
 								class:cursor={targetCursor === i}
@@ -665,7 +745,7 @@
 								onclick={() => {
 									focusedPanel = "targets";
 									targetCursor = i;
-									selectTarget(app.id);
+									selectTarget(selectedTargetId === app.id ? null : app.id);
 								}}
 							>
 								<span class="app-name">{app.name}</span>
@@ -674,9 +754,9 @@
 								>
 							</button>
 						{/each}
-						{#if filteredTargets.length === 0}
+						{#if displayedTargets.length === 0}
 							<div class="empty">
-								No other apps handle these extensions
+								{browseAll ? 'No matching apps' : selectedExts.size === 1 ? `No other apps for .${[...selectedExts][0]}` : 'No other apps for selection'}
 							</div>
 						{/if}
 					</div>
@@ -795,6 +875,21 @@
 		min-width: 40px;
 	}
 
+	.any-toggle {
+		padding: 2px 8px;
+		font-size: 11px;
+		font-weight: 600;
+		color: var(--text-muted);
+		border-color: var(--border);
+		background: var(--bg-mantle);
+	}
+
+	.any-toggle.any-active {
+		color: var(--accent);
+		border-color: var(--accent);
+		background: var(--bg-mantle);
+	}
+
 	.panel-header input[type="text"] {
 		flex: 1;
 		padding: 4px 8px;
@@ -867,6 +962,7 @@
 		text-align: left;
 		font-size: 13px;
 		cursor: pointer;
+		outline: none;
 	}
 
 	.app-item:hover {
@@ -901,6 +997,7 @@
 		cursor: pointer;
 		user-select: none;
 		font-size: 13px;
+		outline: none;
 	}
 
 	.ext-item:hover {
@@ -916,11 +1013,6 @@
 	.ext-item.selected .ext-desc,
 	.ext-item.selected .ext-default {
 		color: inherit;
-	}
-
-	.ext-item.greyed {
-		opacity: 0.3;
-		pointer-events: none;
 	}
 
 	.ext-name {
