@@ -971,6 +971,7 @@
 	}
 
 	.reassign-btn:hover {
-		opacity: 0.9;
+		background: var(--ctp-green);
+		opacity: 0.7;
 	}
 </style>
