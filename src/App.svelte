@@ -14,13 +14,14 @@
 	import type { Action } from "./lib/keymap";
 
 	let apps: App[] = $state([]);
+	let allExtensions: Extension[] = $state([]);
 	let extensions: Extension[] = $state([]);
 	let candidateTargets: App[] = $state([]);
 	let eligibleExts: Set<string> = $state(new Set());
 	let selectedExts: Set<string> = $state(new Set());
 	let summary: [number, number] = $state([0, 0]);
 
-	let appFilter = $state("");
+	let extFilter = $state("");
 	let selectedSourceId: number | null = $state(null);
 	let selectedTargetId: number | null = $state(null);
 
@@ -33,7 +34,7 @@
 	let extCursor = $state(0);
 	let targetCursor = $state(0);
 
-	let filterInputEl: HTMLInputElement | undefined = $state(undefined);
+	let extFilterInputEl: HTMLInputElement | undefined = $state(undefined);
 	let panelBodyEls: Record<Panel, HTMLElement | undefined> = $state({
 		apps: undefined,
 		extensions: undefined,
@@ -46,15 +47,29 @@
 			: [...apps].sort((a, b) => b.ext_count - a.ext_count),
 	);
 
+	let activeExtensions = $derived(extFilter ? allExtensions : extensions);
+
+	let filteredExtensions = $derived(
+		extFilter
+			? activeExtensions.filter(
+					(e) =>
+						e.ext.includes(extFilter.toLowerCase()) ||
+						e.description
+							.toLowerCase()
+							.includes(extFilter.toLowerCase()),
+				)
+			: activeExtensions,
+	);
+
 	let sortedExtensions = $derived(
 		selectedTargetId !== null
-			? [...extensions].sort((a, b) => {
+			? [...filteredExtensions].sort((a, b) => {
 					const aEligible = eligibleExts.has(a.ext) ? 0 : 1;
 					const bEligible = eligibleExts.has(b.ext) ? 0 : 1;
 					if (aEligible !== bEligible) return aEligible - bEligible;
 					return a.ext.localeCompare(b.ext);
 				})
-			: extensions,
+			: filteredExtensions,
 	);
 
 	let greyedExts = $derived(
@@ -68,11 +83,13 @@
 	);
 
 	async function refresh() {
-		const [a, s] = await Promise.all([
-			getApps(appFilter || undefined),
+		const [a, all, s] = await Promise.all([
+			getApps(),
+			getExtensionsForApp(),
 			getSummary(),
 		]);
 		apps = a;
+		allExtensions = all;
 		summary = s;
 	}
 
@@ -90,15 +107,12 @@
 		init();
 	});
 
-	async function onAppFilterInput() {
-		apps = await getApps(appFilter || undefined);
-	}
-
 	async function selectSource(appId: number | null) {
 		selectedSourceId = appId;
 		selectedTargetId = null;
 		selectedExts = new Set();
 		eligibleExts = new Set();
+		extFilter = "";
 		extCursor = 0;
 		targetCursor = 0;
 
@@ -364,14 +378,14 @@
 				break;
 
 			case "search":
-				filterInputEl?.focus();
+				extFilterInputEl?.focus();
 				break;
 
 			case "escape":
-				if (document.activeElement === filterInputEl) {
-					appFilter = "";
-					filterInputEl?.blur();
-					await onAppFilterInput();
+				if (document.activeElement === extFilterInputEl) {
+					extFilter = "";
+					extFilterInputEl?.blur();
+					extCursor = 0;
 				} else if (selectedTargetId !== null) {
 					await selectTarget(null);
 				} else {
@@ -431,13 +445,6 @@
 					>
 						{appSort === "alpha" ? "A-Z" : "#Ext"}
 					</button>
-					<input
-						type="text"
-						placeholder="Filter apps..."
-						bind:value={appFilter}
-						bind:this={filterInputEl}
-						oninput={onAppFilterInput}
-					/>
 				</div>
 				<div class="panel-body" bind:this={panelBodyEls.apps}>
 					{#each sortedApps as app, i (app.id)}
@@ -464,16 +471,14 @@
 				class:panel-focused={focusedPanel === "extensions"}
 			>
 				<div class="panel-header">
-					<h2>
-						{#if selectedSourceId !== null}
-							{@const sourceApp = sortedApps.find(
-								(a) => a.id === selectedSourceId,
-							)}
-							Extensions for {sourceApp?.name ?? "app"}
-						{:else}
-							All Extensions
-						{/if}
-					</h2>
+					<h2>Extensions</h2>
+					<input
+						type="text"
+						placeholder="Search all extensions..."
+						bind:value={extFilter}
+						bind:this={extFilterInputEl}
+						oninput={() => { extCursor = 0; }}
+					/>
 					{#if selectedTargetId !== null}
 						<button onclick={selectAllEligible}>
 							Select All ({eligibleExts.size})
@@ -508,7 +513,7 @@
 									>{ext.description}</span
 								>
 							{/if}
-							{#if selectedSourceId === null && ext.default_app_name}
+							{#if (extFilter || selectedSourceId === null) && ext.default_app_name}
 								<span class="ext-default"
 									>{ext.default_app_name}</span
 								>
