@@ -107,6 +107,10 @@
 
 	let targetCursor = $state(0);
 
+	let canReassign = $derived(selectedExts.size > 0 && selectedTargetId !== null && selectedSourceId !== null);
+	let reassignSourceApp = $derived(canReassign ? apps.find((a) => a.id === selectedSourceId) : null);
+	let reassignTargetApp = $derived(canReassign ? displayedTargets.find((a) => a.id === selectedTargetId) : null);
+
 	let selectedOwnerAppIds = $derived.by(() => {
 		if (selectedExts.size === 0) return new Set<number>();
 		const ids = new Set<number>();
@@ -689,22 +693,7 @@
 						<div class="empty">No extensions</div>
 					{/if}
 				</div>
-				{#if selectedExts.size > 0 && selectedTargetId !== null}
-					{@const sourceApp = apps.find(
-						(a) => a.id === selectedSourceId,
-					)}
-					{@const targetApp = displayedTargets.find(
-						(a) => a.id === selectedTargetId,
-					)}
-					<div class="reassign-bar">
-						<button class="reassign-btn" onclick={doReassign}>
-							Reassign {selectedExts.size <= 3
-								? [...selectedExts].map(e => `.${e}`).join(", ")
-								: `${selectedExts.size} extensions`} from {sourceApp?.name ?? "app"} to {targetApp?.name ?? "app"}
-						</button>
-					</div>
-				{/if}
-			</div>
+				</div>
 
 			<!-- Right: Target Apps -->
 			{#if selectedSourceId !== null}
@@ -765,6 +754,15 @@
 		</div>
 	{/if}
 
+	{#if canReassign}
+		<div class="reassign-float">
+			<button class="reassign-btn" onclick={doReassign}>
+				Reassign {selectedExts.size <= 3
+					? [...selectedExts].map(e => `.${e}`).join(", ")
+					: `${selectedExts.size} extensions`} from {reassignSourceApp?.name ?? "app"} to {reassignTargetApp?.name ?? "app"}
+			</button>
+		</div>
+	{/if}
 	<footer>
 		<span>{summary[0]} apps</span>
 		<span>{summary[1]} extensions</span>
@@ -788,6 +786,7 @@
 		display: flex;
 		flex-direction: column;
 		height: 100vh;
+		position: relative;
 	}
 
 	footer {
@@ -1043,27 +1042,28 @@
 		font-size: 13px;
 	}
 
-	.reassign-bar {
-		padding: 8px 12px;
-		border-top: 1px solid var(--border);
-		background: var(--bg-mantle);
-		flex-shrink: 0;
+	.reassign-float {
+		position: absolute;
+		bottom: 40px;
+		left: 50%;
+		transform: translateX(-50%);
+		z-index: 10;
 	}
 
 	.reassign-btn {
-		width: 100%;
-		padding: 8px 16px;
+		padding: 8px 24px;
 		background: var(--ctp-green);
 		color: var(--ctp-crust);
 		border: none;
-		border-radius: 6px;
+		border-radius: 8px;
 		font-size: 13px;
 		font-weight: 600;
 		cursor: pointer;
+		white-space: nowrap;
+		box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
 	}
 
 	.reassign-btn:hover {
-		background: var(--ctp-green);
-		opacity: 0.7;
+		opacity: 0.85;
 	}
 </style>
