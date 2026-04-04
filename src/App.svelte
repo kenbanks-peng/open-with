@@ -245,7 +245,9 @@
 
 	async function toggleExt(ext: string, event: MouseEvent) {
 		const extData = sortedExtensions.find((e) => e.ext === ext);
-		if (extData) await ensureSource(extData);
+		const removing = selectedExts.has(ext);
+
+		if (!removing && extData) await ensureSource(extData);
 
 		const next = new Set(selectedExts);
 		if (event.metaKey || event.ctrlKey) {
@@ -284,8 +286,12 @@
 			);
 		} else {
 			filteredTargets = candidateTargets;
-			selectedTargetId = null;
-			eligibleExts = new Set();
+			if (selectedTargetId !== null && selectedSourceId !== null) {
+				const eligible = await getEligibleExtensions(selectedSourceId, selectedTargetId);
+				eligibleExts = new Set(eligible);
+			} else {
+				eligibleExts = new Set();
+			}
 		}
 		// If current target is no longer valid, deselect it
 		if (
@@ -472,7 +478,7 @@
 				if (focusedPanel === "extensions") {
 					const extData = sortedExtensions[extCursor];
 					if (extData) {
-						await ensureSource(extData);
+						if (!selectedExts.has(extData.ext)) await ensureSource(extData);
 						const next = new Set(selectedExts);
 						if (next.has(extData.ext)) next.delete(extData.ext);
 						else next.add(extData.ext);
@@ -754,18 +760,17 @@
 		</div>
 	{/if}
 
-	{#if canReassign}
-		<div class="reassign-float">
-			<button class="reassign-btn" onclick={doReassign}>
+	<footer class:footer-reassign={canReassign} onclick={canReassign ? doReassign : undefined} role={canReassign ? "button" : undefined}>
+		{#if canReassign}
+			<span class="reassign-label">
 				Reassign {selectedExts.size <= 3
 					? [...selectedExts].map(e => `.${e}`).join(", ")
 					: `${selectedExts.size} extensions`} from {reassignSourceApp?.name ?? "app"} to {reassignTargetApp?.name ?? "app"}
-			</button>
-		</div>
-	{/if}
-	<footer>
-		<span>{summary[0]} apps</span>
-		<span>{summary[1]} extensions</span>
+			</span>
+		{:else}
+			<span>{summary[0]} apps</span>
+			<span>{summary[1]} extensions</span>
+		{/if}
 	</footer>
 </main>
 
@@ -786,12 +791,12 @@
 		display: flex;
 		flex-direction: column;
 		height: 100vh;
-		position: relative;
 	}
 
 	footer {
 		display: flex;
 		align-items: center;
+		justify-content: center;
 		gap: 16px;
 		padding: 6px 16px;
 		background: var(--bg-mantle);
@@ -799,6 +804,12 @@
 		font-size: 12px;
 		color: var(--text-muted);
 		flex-shrink: 0;
+		align-self: stretch;
+		margin: 0;
+		border-radius: 0;
+		transform: translateY(0);
+		box-shadow: none;
+		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 	}
 
 	.loading {
@@ -1042,28 +1053,29 @@
 		font-size: 13px;
 	}
 
-	.reassign-float {
-		position: absolute;
-		bottom: 40px;
-		left: 50%;
-		transform: translateX(-50%);
-		z-index: 10;
-	}
-
-	.reassign-btn {
-		padding: 8px 24px;
+	.footer-reassign {
 		background: var(--ctp-green);
-		color: var(--ctp-crust);
+		border-top-color: transparent;
 		border: none;
-		border-radius: 8px;
-		font-size: 13px;
-		font-weight: 600;
+		color: var(--ctp-crust);
 		cursor: pointer;
-		white-space: nowrap;
-		box-shadow: 0 2px 12px rgba(0, 0, 0, 0.3);
+		font-weight: 600;
+		font-size: 15px;
+		padding: 16px 48px;
+		align-self: center;
+		margin: 0 auto;
+		width: fit-content;
+		border-radius: 14px;
+		transform: translateY(-80px);
+		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
 	}
 
-	.reassign-btn:hover {
-		opacity: 0.85;
+	.footer-reassign:hover {
+		transform: translateY(-82px);
+		box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
+	}
+
+	.reassign-label {
+		white-space: nowrap;
 	}
 </style>

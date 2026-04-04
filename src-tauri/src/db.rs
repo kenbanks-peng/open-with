@@ -250,7 +250,6 @@ impl Database {
         if exts.is_empty() {
             return Ok(Vec::new());
         }
-        let ext_count = exts.len() as i64;
         let placeholders: Vec<String> = exts
             .iter()
             .enumerate()
@@ -266,13 +265,11 @@ impl Database {
              WHERE ea.ext IN ({})
                AND (?{} IS NULL OR a.id != ?{})
              GROUP BY a.id
-             HAVING COUNT(DISTINCT ea.ext) = ?{}
              ORDER BY ext_count DESC, a.name COLLATE NOCASE",
             exts.len() + 1,
             placeholders.join(","),
             exts.len() + 1,
             exts.len() + 1,
-            exts.len() + 2,
         );
         let mut stmt = self.conn.prepare(&sql)?;
         let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
@@ -280,7 +277,6 @@ impl Database {
             param_values.push(Box::new(ext.clone()));
         }
         param_values.push(Box::new(exclude_app_id));
-        param_values.push(Box::new(ext_count));
         let refs: Vec<&dyn rusqlite::types::ToSql> =
             param_values.iter().map(|p| p.as_ref()).collect();
         let rows = stmt.query_map(refs.as_slice(), |r| {
