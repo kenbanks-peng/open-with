@@ -77,6 +77,17 @@ fn get_apps_for_extension(state: State<AppState>, ext: String) -> Result<Vec<App
 }
 
 #[tauri::command]
+fn get_apps_for_extensions(
+    state: State<AppState>,
+    exts: Vec<String>,
+    exclude_app_id: Option<i64>,
+) -> Result<Vec<App>, String> {
+    let db = state.db.lock().map_err(|e| e.to_string())?;
+    db.get_apps_for_extensions(&exts, exclude_app_id)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 fn get_summary(state: State<AppState>) -> Result<(i64, i64), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
     db.get_summary().map_err(|e| e.to_string())
@@ -99,6 +110,7 @@ pub fn run() {
             get_eligible_extensions,
             reassign_extensions,
             get_apps_for_extension,
+            get_apps_for_extensions,
             get_summary,
         ])
         .run(tauri::generate_context!())

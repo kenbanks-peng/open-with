@@ -33,6 +33,16 @@ export async function getAppsForExtension(ext: string): Promise<App[]> {
 	return invoke("get_apps_for_extension", { ext });
 }
 
+export async function getAppsForExtensions(
+	exts: string[],
+	excludeAppId?: number,
+): Promise<App[]> {
+	return invoke("get_apps_for_extensions", {
+		exts,
+		excludeAppId: excludeAppId ?? null,
+	});
+}
+
 export async function getSummary(): Promise<[number, number]> {
 	return invoke("get_summary");
 }

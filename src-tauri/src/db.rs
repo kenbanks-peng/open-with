@@ -241,6 +241,56 @@ impl Database {
         rows.collect()
     }
 
+    /// Get apps that can open ALL of the given extensions, excluding source_app_id.
+    pub fn get_apps_for_extensions(
+        &self,
+        exts: &[String],
+        exclude_app_id: Option<i64>,
+    ) -> Result<Vec<App>> {
+        if exts.is_empty() {
+            return Ok(Vec::new());
+        }
+        let ext_count = exts.len() as i64;
+        let placeholders: Vec<String> = exts
+            .iter()
+            .enumerate()
+            .map(|(i, _)| format!("?{}", i + 1))
+            .collect();
+        let sql = format!(
+            "SELECT a.id, a.name, a.path,
+                    (SELECT COUNT(*) FROM extensions WHERE default_app_id = a.id) as ext_count
+             FROM apps a
+             JOIN ext_apps ea ON ea.app_id = a.id
+             WHERE ea.ext IN ({})
+               AND (?{} IS NULL OR a.id != ?{})
+             GROUP BY a.id
+             HAVING COUNT(DISTINCT ea.ext) = ?{}
+             ORDER BY a.name COLLATE NOCASE",
+            placeholders.join(","),
+            exts.len() + 1,
+            exts.len() + 1,
+            exts.len() + 2,
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let mut param_values: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+        for ext in exts {
+            param_values.push(Box::new(ext.clone()));
+        }
+        param_values.push(Box::new(exclude_app_id));
+        param_values.push(Box::new(ext_count));
+        let refs: Vec<&dyn rusqlite::types::ToSql> =
+            param_values.iter().map(|p| p.as_ref()).collect();
+        let rows = stmt.query_map(refs.as_slice(), |r| {
+            Ok(App {
+                id: r.get(0)?,
+                name: r.get(1)?,
+                path: r.get(2)?,
+                ext_count: r.get(3)?,
+            })
+        })?;
+        rows.collect()
+    }
+
     pub fn get_summary(&self) -> Result<(i64, i64)> {
         let app_count: i64 = self
             .conn
