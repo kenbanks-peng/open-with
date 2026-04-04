@@ -2,64 +2,43 @@
 	import { onMount } from "svelte";
 	import {
 		getApps,
-		getGroups,
-		getGroupDetail,
+		getExtensionsForApp,
+		getCandidateTargets,
+		getEligibleExtensions,
+		reassignExtensions,
 		getAppsForExtension,
-		getCommonAppsForApp,
-		validateMove,
-		moveExtensions,
-		createGroup,
-		renameGroup,
-		deleteGroup,
-		assignAppToGroup,
-		breakoutGroup,
 		getSummary,
 	} from "./lib/api";
-	import type { App, Group, GroupDetail } from "./lib/types";
+	import type { App, Extension } from "./lib/types";
 	import { resolveAction } from "./lib/keymap";
 	import type { Action } from "./lib/keymap";
 
 	let apps: App[] = $state([]);
-	let groups: Group[] = $state([]);
-	let groupDetail: GroupDetail | null = $state(null);
-	let summary: [number, number, number] = $state([0, 0, 0]);
+	let extensions: Extension[] = $state([]);
+	let candidateTargets: App[] = $state([]);
+	let eligibleExts: Set<string> = $state(new Set());
+	let selectedExts: Set<string> = $state(new Set());
+	let summary: [number, number] = $state([0, 0]);
 
 	let appFilter = $state("");
-	let selectedAppId: number | null = $state(null);
-	let selectedGroupId: number | null = $state(null);
-	let selectedExts: Set<string> = $state(new Set());
-	let editingGroupId: number | null = $state(null);
-	let editingName = $state("");
+	let selectedSourceId: number | null = $state(null);
+	let selectedTargetId: number | null = $state(null);
 
 	let appSort = $state<"alpha" | "ext_count">("ext_count");
-	let groupFilterMode: "eligible" | "assigned" = $state("assigned");
-
-	let extApps: App[] = $state([]);
-	let appApps: App[] = $state([]);
-
-	let dragExts: string[] = $state([]);
-	let dropValid: Record<number, boolean> = $state({});
 	let loading = $state(true);
 
-	type Panel = "apps" | "groups" | "extensions";
+	type Panel = "apps" | "extensions" | "targets";
 	let focusedPanel: Panel = $state("apps");
 	let appCursor = $state(0);
-	let groupCursor = $state(0);
 	let extCursor = $state(0);
+	let targetCursor = $state(0);
 
 	let filterInputEl: HTMLInputElement | undefined = $state(undefined);
 	let panelBodyEls: Record<Panel, HTMLElement | undefined> = $state({
 		apps: undefined,
-		groups: undefined,
 		extensions: undefined,
+		targets: undefined,
 	});
-
-	function getVisibleApps(): App[] {
-		if (focusedPanel === "apps") return appApps;
-		if (focusedPanel === "groups" && groupDetail) return groupDetail.common_apps;
-		return extApps;
-	}
-	let visibleApps = $derived(getVisibleApps());
 
 	let sortedApps = $derived(
 		appSort === "alpha"
@@ -67,37 +46,42 @@
 			: [...apps].sort((a, b) => b.ext_count - a.ext_count),
 	);
 
-	let sortedGroups = $derived(
-		[...groups].sort((a, b) => {
-			const aAssigned = selectedAppId !== null && a.assigned_app_id === selectedAppId;
-			const bAssigned = selectedAppId !== null && b.assigned_app_id === selectedAppId;
-			if (aAssigned !== bAssigned) return aAssigned ? -1 : 1;
-			return a.name.localeCompare(b.name);
-		}),
+	let sortedExtensions = $derived(
+		selectedTargetId !== null
+			? [...extensions].sort((a, b) => {
+					const aEligible = eligibleExts.has(a.ext) ? 0 : 1;
+					const bEligible = eligibleExts.has(b.ext) ? 0 : 1;
+					if (aEligible !== bEligible) return aEligible - bEligible;
+					return a.ext.localeCompare(b.ext);
+				})
+			: extensions,
+	);
+
+	let greyedExts = $derived(
+		selectedTargetId !== null
+			? new Set(
+					extensions
+						.filter((e) => !eligibleExts.has(e.ext))
+						.map((e) => e.ext),
+				)
+			: new Set<string>(),
 	);
 
 	async function refresh() {
-		const assignedOnly =
-			selectedAppId !== null && groupFilterMode === "assigned";
-		const [a, g, s] = await Promise.all([
+		const [a, s] = await Promise.all([
 			getApps(appFilter || undefined),
-			getGroups(selectedAppId ?? undefined, assignedOnly),
 			getSummary(),
 		]);
 		apps = a;
-		groups = g;
 		summary = s;
-		if (selectedGroupId !== null) {
-			groupDetail = await getGroupDetail(selectedGroupId);
-		}
 	}
 
 	async function init() {
 		loading = true;
 		await refresh();
 		if (sortedApps.length > 0) {
-			appCursor = 1;
-			await selectApp(sortedApps[0].id);
+			appCursor = 0;
+			await selectSource(sortedApps[0].id);
 		}
 		loading = false;
 	}
@@ -110,52 +94,52 @@
 		apps = await getApps(appFilter || undefined);
 	}
 
-	async function selectApp(appId: number | null) {
-		selectedAppId = appId;
-		const assignedOnly = selectedAppId !== null && groupFilterMode === "assigned";
-		groups = await getGroups(appId ?? undefined, assignedOnly);
-		appApps = appId !== null ? await getCommonAppsForApp(appId) : [];
+	async function selectSource(appId: number | null) {
+		selectedSourceId = appId;
+		selectedTargetId = null;
 		selectedExts = new Set();
-		if (sortedGroups.length > 0) {
-			await selectGroup(sortedGroups[0].id);
-		} else {
-			selectedGroupId = null;
-			groupDetail = null;
-		}
-	}
-
-	async function setGroupFilterMode(mode: "eligible" | "assigned") {
-		groupFilterMode = mode;
-		const assignedOnly = mode === "assigned";
-		groups = await getGroups(selectedAppId ?? undefined, assignedOnly);
-		selectedGroupId = null;
-		groupDetail = null;
-		selectedExts = new Set();
-	}
-
-	async function refreshExtApps() {
-		if (groupDetail && extCursor < groupDetail.extensions.length) {
-			extApps = await getAppsForExtension(groupDetail.extensions[extCursor].ext);
-		} else {
-			extApps = [];
-		}
-	}
-
-	async function selectGroup(groupId: number) {
-		selectedGroupId = groupId;
-		groupDetail = await getGroupDetail(groupId);
-		selectedExts = new Set();
+		eligibleExts = new Set();
 		extCursor = 0;
-		await refreshExtApps();
+		targetCursor = 0;
+
+		if (appId !== null) {
+			const [exts, targets] = await Promise.all([
+				getExtensionsForApp(appId),
+				getCandidateTargets(appId),
+			]);
+			extensions = exts;
+			candidateTargets = targets;
+		} else {
+			extensions = await getExtensionsForApp();
+			candidateTargets = [];
+		}
+	}
+
+	async function selectTarget(appId: number | null) {
+		selectedTargetId = appId;
+		selectedExts = new Set();
+
+		if (appId !== null && selectedSourceId !== null) {
+			const eligible = await getEligibleExtensions(
+				selectedSourceId,
+				appId,
+			);
+			eligibleExts = new Set(eligible);
+		} else {
+			eligibleExts = new Set();
+		}
 	}
 
 	function toggleExt(ext: string, event: MouseEvent) {
+		if (greyedExts.has(ext)) return;
 		const next = new Set(selectedExts);
 		if (event.metaKey || event.ctrlKey) {
 			if (next.has(ext)) next.delete(ext);
 			else next.add(ext);
-		} else if (event.shiftKey && groupDetail) {
-			const allExts = groupDetail.extensions.map((e) => e.ext);
+		} else if (event.shiftKey) {
+			const allExts = sortedExtensions
+				.filter((e) => !greyedExts.has(e.ext))
+				.map((e) => e.ext);
 			const lastSelected = [...selectedExts].pop();
 			if (lastSelected) {
 				const from = allExts.indexOf(lastSelected);
@@ -172,124 +156,47 @@
 		selectedExts = next;
 	}
 
-	function onDragStart(event: DragEvent) {
-		const exts = [...selectedExts];
-		if (exts.length === 0) return;
-		dragExts = exts;
-		event.dataTransfer!.effectAllowed = "move";
-		event.dataTransfer!.setData("text/plain", exts.join(","));
+	function selectAllEligible() {
+		if (selectedTargetId === null) {
+			selectedExts = new Set(extensions.map((e) => e.ext));
+		} else {
+			selectedExts = new Set(eligibleExts);
+		}
 	}
 
-	async function onDragOverGroup(event: DragEvent, groupId: number) {
-		if (dragExts.length === 0 || groupId === selectedGroupId) return;
-		event.preventDefault();
-		if (groupId === -1) {
-			dropValid = { ...dropValid, [groupId]: true };
+	async function doReassign() {
+		if (
+			selectedTargetId === null ||
+			selectedSourceId === null ||
+			selectedExts.size === 0
+		)
 			return;
-		}
-		if (dropValid[groupId] === undefined) {
-			const valid = await validateMove(dragExts, groupId);
-			dropValid = { ...dropValid, [groupId]: valid };
-		}
-		if (dropValid[groupId]) {
-			event.dataTransfer!.dropEffect = "move";
-		}
-	}
-
-	async function onDropGroup(event: DragEvent, groupId: number) {
-		event.preventDefault();
-		if (dragExts.length === 0) return;
-		if (groupId !== -1 && !dropValid[groupId]) return;
-
-		const targetId = groupId === -1 ? null : groupId;
-		await moveExtensions(dragExts, targetId);
-		dragExts = [];
-		dropValid = {};
+		const exts = [...selectedExts];
+		await reassignExtensions(exts, selectedTargetId);
+		selectedExts = new Set();
+		selectedTargetId = null;
+		eligibleExts = new Set();
 		await refresh();
-		if (selectedGroupId !== null) {
-			groupDetail = await getGroupDetail(selectedGroupId);
-		}
-	}
-
-	function onDragEnd() {
-		dragExts = [];
-		dropValid = {};
-	}
-
-	async function onCreateGroup() {
-		const name = "New Group";
-		const group = await createGroup(name);
-		await refresh();
-		editingGroupId = group.id;
-		editingName = name;
-	}
-
-	async function onDeleteGroup(groupId: number) {
-		await deleteGroup(groupId);
-		if (selectedGroupId === groupId) {
-			selectedGroupId = null;
-			groupDetail = null;
-		}
-		await refresh();
-	}
-
-	function startRename(group: Group) {
-		editingGroupId = group.id;
-		editingName = group.name;
-	}
-
-	async function finishRename() {
-		if (editingGroupId !== null && editingName.trim()) {
-			await renameGroup(editingGroupId, editingName.trim());
-			editingGroupId = null;
-			await refresh();
-		}
-	}
-
-	function onRenameKeydown(event: KeyboardEvent) {
-		if (event.key === "Enter") finishRename();
-		if (event.key === "Escape") {
-			editingGroupId = null;
-		}
-	}
-
-	async function onBreakout(groupId: number) {
-		const created = await breakoutGroup(groupId);
-		if (created > 0) {
-			selectedGroupId = null;
-			groupDetail = null;
-			await refresh();
-		}
-	}
-
-	async function onAssignApp(groupId: number, appId: number | null) {
-		await assignAppToGroup(groupId, appId);
-		await refresh();
-		if (selectedGroupId === groupId) {
-			groupDetail = await getGroupDetail(groupId);
-		}
-		if (selectedAppId !== null) {
-			appApps = await getCommonAppsForApp(selectedAppId);
-		}
+		await selectSource(selectedSourceId);
 	}
 
 	function panelListLength(panel: Panel): number {
-		if (panel === "apps") return sortedApps.length + 1; // +1 for "All"
-		if (panel === "groups") return sortedGroups.length;
-		if (panel === "extensions") return groupDetail?.extensions.length ?? 0;
+		if (panel === "apps") return sortedApps.length;
+		if (panel === "extensions") return sortedExtensions.length;
+		if (panel === "targets") return candidateTargets.length;
 		return 0;
 	}
 
 	function cursorFor(panel: Panel): number {
 		if (panel === "apps") return appCursor;
-		if (panel === "groups") return groupCursor;
-		return extCursor;
+		if (panel === "extensions") return extCursor;
+		return targetCursor;
 	}
 
 	function setCursor(panel: Panel, val: number) {
 		if (panel === "apps") appCursor = val;
-		else if (panel === "groups") groupCursor = val;
-		else extCursor = val;
+		else if (panel === "extensions") extCursor = val;
+		else targetCursor = val;
 	}
 
 	function clampCursor(panel: Panel) {
@@ -313,23 +220,26 @@
 	function scrollHalfPage(panel: Panel, direction: number) {
 		const body = panelBodyEls[panel];
 		if (!body) return;
-		body.scrollBy({ top: direction * (body.clientHeight / 2), behavior: "smooth" });
+		body.scrollBy({
+			top: direction * (body.clientHeight / 2),
+			behavior: "smooth",
+		});
 	}
 
 	async function selectAtCursor() {
 		if (focusedPanel === "apps") {
-			const idx = appCursor;
-			if (idx === 0) await selectApp(null);
-			else if (idx - 1 < sortedApps.length) await selectApp(sortedApps[idx - 1].id);
-			groupCursor = 0;
-		} else if (focusedPanel === "groups") {
-			if (groupCursor < sortedGroups.length) await selectGroup(sortedGroups[groupCursor].id);
-			extCursor = 0;
+			if (appCursor < sortedApps.length) {
+				await selectSource(sortedApps[appCursor].id);
+			}
+		} else if (focusedPanel === "targets") {
+			if (targetCursor < candidateTargets.length) {
+				await selectTarget(candidateTargets[targetCursor].id);
+			}
 		}
 	}
 
 	async function handleAction(action: Action) {
-		const panels: Panel[] = ["apps", "groups", "extensions"];
+		const panels: Panel[] = ["apps", "extensions", "targets"];
 		const panelIdx = panels.indexOf(focusedPanel);
 
 		switch (action) {
@@ -338,9 +248,9 @@
 				clampCursor(focusedPanel);
 				break;
 			case "focus_right":
-				if (panelIdx < panels.length - 1) focusedPanel = panels[panelIdx + 1];
+				if (panelIdx < panels.length - 1)
+					focusedPanel = panels[panelIdx + 1];
 				clampCursor(focusedPanel);
-				if (focusedPanel === "extensions") await refreshExtApps();
 				break;
 
 			case "move_down": {
@@ -349,8 +259,11 @@
 				if (cur < len - 1) {
 					setCursor(focusedPanel, cur + 1);
 					scrollCursorIntoView(focusedPanel);
-					if (focusedPanel === "apps" || focusedPanel === "groups") await selectAtCursor();
-					else if (focusedPanel === "extensions") await refreshExtApps();
+					if (
+						focusedPanel === "apps" ||
+						focusedPanel === "targets"
+					)
+						await selectAtCursor();
 				}
 				break;
 			}
@@ -359,23 +272,26 @@
 				if (cur > 0) {
 					setCursor(focusedPanel, cur - 1);
 					scrollCursorIntoView(focusedPanel);
-					if (focusedPanel === "apps" || focusedPanel === "groups") await selectAtCursor();
-					else if (focusedPanel === "extensions") await refreshExtApps();
+					if (
+						focusedPanel === "apps" ||
+						focusedPanel === "targets"
+					)
+						await selectAtCursor();
 				}
 				break;
 			}
 			case "move_top":
 				setCursor(focusedPanel, 0);
 				scrollCursorIntoView(focusedPanel);
-				if (focusedPanel === "apps" || focusedPanel === "groups") await selectAtCursor();
-				else if (focusedPanel === "extensions") await refreshExtApps();
+				if (focusedPanel === "apps" || focusedPanel === "targets")
+					await selectAtCursor();
 				break;
 			case "move_bottom": {
 				const len = panelListLength(focusedPanel);
 				if (len > 0) setCursor(focusedPanel, len - 1);
 				scrollCursorIntoView(focusedPanel);
-				if (focusedPanel === "apps" || focusedPanel === "groups") await selectAtCursor();
-				else if (focusedPanel === "extensions") await refreshExtApps();
+				if (focusedPanel === "apps" || focusedPanel === "targets")
+					await selectAtCursor();
 				break;
 			}
 
@@ -384,9 +300,9 @@
 				break;
 
 			case "toggle_select":
-				if (focusedPanel === "extensions" && groupDetail) {
-					const ext = groupDetail.extensions[extCursor]?.ext;
-					if (ext) {
+				if (focusedPanel === "extensions") {
+					const ext = sortedExtensions[extCursor]?.ext;
+					if (ext && !greyedExts.has(ext)) {
 						const next = new Set(selectedExts);
 						if (next.has(ext)) next.delete(ext);
 						else next.add(ext);
@@ -396,48 +312,55 @@
 				break;
 
 			case "extend_down":
-				if (focusedPanel === "extensions" && groupDetail) {
-					const ext = groupDetail.extensions[extCursor]?.ext;
-					if (ext) {
+				if (focusedPanel === "extensions") {
+					const ext = sortedExtensions[extCursor]?.ext;
+					if (ext && !greyedExts.has(ext)) {
 						const next = new Set(selectedExts);
 						next.add(ext);
 						selectedExts = next;
 					}
-					const len = groupDetail.extensions.length;
-					if (extCursor < len - 1) {
+					if (extCursor < sortedExtensions.length - 1) {
 						extCursor++;
-						const nextExt = groupDetail.extensions[extCursor]?.ext;
-						if (nextExt) {
+						const nextExt = sortedExtensions[extCursor]?.ext;
+						if (nextExt && !greyedExts.has(nextExt)) {
 							const next2 = new Set(selectedExts);
 							next2.add(nextExt);
 							selectedExts = next2;
 						}
 						scrollCursorIntoView("extensions");
-						await refreshExtApps();
 					}
 				}
 				break;
 
 			case "extend_up":
-				if (focusedPanel === "extensions" && groupDetail) {
-					const ext = groupDetail.extensions[extCursor]?.ext;
-					if (ext) {
+				if (focusedPanel === "extensions") {
+					const ext = sortedExtensions[extCursor]?.ext;
+					if (ext && !greyedExts.has(ext)) {
 						const next = new Set(selectedExts);
 						next.add(ext);
 						selectedExts = next;
 					}
 					if (extCursor > 0) {
 						extCursor--;
-						const nextExt = groupDetail.extensions[extCursor]?.ext;
-						if (nextExt) {
+						const nextExt = sortedExtensions[extCursor]?.ext;
+						if (nextExt && !greyedExts.has(nextExt)) {
 							const next2 = new Set(selectedExts);
 							next2.add(nextExt);
 							selectedExts = next2;
 						}
 						scrollCursorIntoView("extensions");
-						await refreshExtApps();
 					}
 				}
+				break;
+
+			case "select_all":
+				if (focusedPanel === "extensions") {
+					selectAllEligible();
+				}
+				break;
+
+			case "reassign":
+				await doReassign();
 				break;
 
 			case "search":
@@ -445,34 +368,15 @@
 				break;
 
 			case "escape":
-				if (editingGroupId !== null) {
-					editingGroupId = null;
-				} else if (document.activeElement === filterInputEl) {
+				if (document.activeElement === filterInputEl) {
 					appFilter = "";
 					filterInputEl?.blur();
 					await onAppFilterInput();
+				} else if (selectedTargetId !== null) {
+					await selectTarget(null);
 				} else {
 					selectedExts = new Set();
 				}
-				break;
-
-			case "rename":
-				if (focusedPanel === "groups" && groupCursor < sortedGroups.length) {
-					const g = sortedGroups[groupCursor];
-					if (g.id !== -1) startRename(g);
-				}
-				break;
-
-			case "delete":
-				if (focusedPanel === "groups" && groupCursor < sortedGroups.length) {
-					const g = sortedGroups[groupCursor];
-					if (g.id !== -1) await onDeleteGroup(g.id);
-					clampCursor("groups");
-				}
-				break;
-
-			case "new_group":
-				await onCreateGroup();
 				break;
 
 			case "scroll_half_down":
@@ -500,7 +404,6 @@
 			handleAction(action);
 		}
 	}
-
 </script>
 
 <svelte:window onkeydown={onGlobalKeydown} />
@@ -510,14 +413,21 @@
 		<div class="loading">Loading...</div>
 	{:else}
 		<div class="panels">
-			<!-- Left: Apps -->
-			<div class="panel apps-panel" class:panel-focused={focusedPanel === 'apps'}>
+			<!-- Left: Source Apps -->
+			<div
+				class="panel apps-panel"
+				class:panel-focused={focusedPanel === "apps"}
+			>
 				<div class="panel-header">
 					<h2>Apps</h2>
 					<button
 						class="sort-toggle"
-						onclick={() => appSort = appSort === "alpha" ? "ext_count" : "alpha"}
-						title={appSort === "alpha" ? "Sorted A-Z; click to sort by extension count" : "Sorted by extension count; click to sort A-Z"}
+						onclick={() =>
+							(appSort =
+								appSort === "alpha" ? "ext_count" : "alpha")}
+						title={appSort === "alpha"
+							? "Sorted A-Z; click to sort by default count"
+							: "Sorted by default count; click to sort A-Z"}
 					>
 						{appSort === "alpha" ? "A-Z" : "#Ext"}
 					</button>
@@ -530,18 +440,16 @@
 					/>
 				</div>
 				<div class="panel-body" bind:this={panelBodyEls.apps}>
-					<button
-						class="app-item"
-						class:cursor={appCursor === 0}
-						onclick={() => { focusedPanel = 'apps'; selectApp(null); appCursor = 0; }}
-					>
-						All
-					</button>
 					{#each sortedApps as app, i (app.id)}
 						<button
 							class="app-item"
-							class:cursor={appCursor === i + 1}
-							onclick={() => { focusedPanel = 'apps'; selectApp(app.id); appCursor = i + 1; }}
+							class:cursor={appCursor === i}
+							class:active={selectedSourceId === app.id}
+							onclick={() => {
+								focusedPanel = "apps";
+								appCursor = i;
+								selectSource(app.id);
+							}}
 						>
 							<span class="app-name">{app.name}</span>
 							<span class="badge">{app.ext_count}</span>
@@ -550,163 +458,116 @@
 				</div>
 			</div>
 
-			<!-- Middle: Groups -->
-			<div class="panel groups-panel" class:panel-focused={focusedPanel === 'groups'}>
+			<!-- Middle: Extensions -->
+			<div
+				class="panel extensions-panel"
+				class:panel-focused={focusedPanel === "extensions"}
+			>
 				<div class="panel-header">
-					<h2>Groups</h2>
-					{#if selectedAppId !== null}
-						<button
-							class="toggle-btn"
-							onclick={() => setGroupFilterMode(groupFilterMode === "eligible" ? "assigned" : "eligible")}
-						>
-							{groupFilterMode === "eligible" ? "Eligible" : "Assigned"}
+					<h2>
+						{#if selectedSourceId !== null}
+							{@const sourceApp = sortedApps.find(
+								(a) => a.id === selectedSourceId,
+							)}
+							Extensions for {sourceApp?.name ?? "app"}
+						{:else}
+							All Extensions
+						{/if}
+					</h2>
+					{#if selectedTargetId !== null}
+						<button onclick={selectAllEligible}>
+							Select All ({eligibleExts.size})
 						</button>
 					{/if}
-					<button onclick={onCreateGroup}>+ New Group</button>
 				</div>
-				<div class="panel-body" bind:this={panelBodyEls.groups}>
-					{#each sortedGroups as group, i (group.id)}
+				<div class="panel-body" bind:this={panelBodyEls.extensions}>
+					{#each sortedExtensions as ext, i (ext.ext)}
 						<div
-							class="group-item"
-							class:cursor={groupCursor === i}
-							class:drop-valid={dragExts.length > 0 && dropValid[group.id] === true}
-							class:drop-invalid={dragExts.length > 0 && dropValid[group.id] === false}
+							class="ext-item"
+							class:selected={selectedExts.has(ext.ext)}
+							class:cursor={extCursor === i}
+							class:greyed={greyedExts.has(ext.ext)}
 							role="option"
-							aria-selected={selectedGroupId === group.id}
+							aria-selected={selectedExts.has(ext.ext)}
 							tabindex="0"
-							onclick={() => { focusedPanel = 'groups'; selectGroup(group.id); groupCursor = i; }}
-							onkeydown={(e: KeyboardEvent) => e.key === 'Enter' && selectGroup(group.id)}
-							ondragover={(e: DragEvent) => onDragOverGroup(e, group.id)}
-							ondrop={(e: DragEvent) => onDropGroup(e, group.id)}
+							onclick={(e) => {
+								focusedPanel = "extensions";
+								extCursor = i;
+								toggleExt(ext.ext, e);
+							}}
+							onkeydown={(e) =>
+								e.key === "Enter" &&
+								toggleExt(
+									ext.ext,
+									e as unknown as MouseEvent,
+								)}
 						>
-							{#if editingGroupId === group.id}
-								<input
-									type="text"
-									class="rename-input"
-									bind:value={editingName}
-									onblur={finishRename}
-									onkeydown={onRenameKeydown}
-								/>
-							{:else}
-								<div class="group-info">
-									<span
-										class="group-name"
-										class:muted={selectedAppId !== null && group.assigned_app_id !== selectedAppId}
-										role="button"
-										tabindex="0"
-										ondblclick={() => group.id !== -1 && startRename(group)}
-										onkeydown={(e: KeyboardEvent) => e.key === 'F2' && group.id !== -1 && startRename(group)}
-									>
-										{group.name}
-									</span>
-									<span class="group-meta">
-										{#if group.assigned_app_name}
-											<span class="assigned" class:muted={selectedAppId !== null && group.assigned_app_id !== selectedAppId}>{group.assigned_app_name}</span>
-										{:else if group.id !== -1}
-											<span class="unassigned">unassigned</span>
-										{/if}
-									</span>
-								</div>
-								<div class="group-actions">
-									<span class="badge">{group.ext_count}</span>
-									{#if group.id !== -1}
-										<button
-											class="delete-btn"
-											onclick={(e: MouseEvent) => { e.stopPropagation(); onDeleteGroup(group.id); }}
-											title="Delete group"
-										>
-											&times;
-										</button>
-									{/if}
-								</div>
+							<span class="ext-name">.{ext.ext}</span>
+							{#if ext.description}
+								<span class="ext-desc"
+									>{ext.description}</span
+								>
+							{/if}
+							{#if selectedSourceId === null && ext.default_app_name}
+								<span class="ext-default"
+									>{ext.default_app_name}</span
+								>
 							{/if}
 						</div>
 					{/each}
+					{#if sortedExtensions.length === 0}
+						<div class="empty">No extensions</div>
+					{/if}
 				</div>
-			</div>
-
-			<!-- Right: Extensions -->
-			<div class="panel extensions-panel" class:panel-focused={focusedPanel === 'extensions'}>
-				{#if groupDetail}
-					<div class="panel-header">
-						<h2>{groupDetail.group.name}</h2>
-						<button
-							onclick={() => onBreakout(groupDetail!.group.id)}
-							title="Split into sub-groups by app compatibility"
-							style:visibility={groupDetail.group.id !== -1 && groupDetail.extensions.length > 1 ? 'visible' : 'hidden'}
-						>Breakout</button>
-					</div>
-					<div class="panel-body" bind:this={panelBodyEls.extensions}>
-						{#each groupDetail.extensions as ext, i (ext.ext)}
-							<div
-								class="ext-item"
-								class:selected={selectedExts.has(ext.ext)}
-								class:cursor={extCursor === i}
-								draggable="true"
-								role="option"
-								aria-selected={selectedExts.has(ext.ext)}
-								tabindex="0"
-								onclick={(e: MouseEvent) => { focusedPanel = 'extensions'; toggleExt(ext.ext, e); extCursor = i; refreshExtApps(); }}
-								onkeydown={(e: KeyboardEvent) => e.key === 'Enter' && toggleExt(ext.ext, e as unknown as MouseEvent)}
-								ondragstart={onDragStart}
-								ondragend={onDragEnd}
-							>
-								<span class="ext-name">.{ext.ext}</span>
-								{#if ext.description}
-									<span class="ext-desc">{ext.description}</span>
-								{/if}
-							</div>
-						{/each}
-						{#if groupDetail.extensions.length === 0}
-							<div class="empty">No extensions in this group</div>
-						{/if}
-					</div>
-				{:else}
-					<div class="panel-header">
-						<h2>Extensions</h2>
-					</div>
-					<div class="panel-body">
-						<div class="empty">Select a group to view extensions</div>
+				{#if selectedExts.size > 0 && selectedTargetId !== null}
+					{@const targetApp = candidateTargets.find(
+						(a) => a.id === selectedTargetId,
+					)}
+					<div class="reassign-bar">
+						<button class="reassign-btn" onclick={doReassign}>
+							Reassign {selectedExts.size} extension{selectedExts.size >
+							1
+								? "s"
+								: ""} to {targetApp?.name ?? "app"}
+						</button>
 					</div>
 				{/if}
 			</div>
 
-			<!-- Far right: Apps for extension, group, or app -->
-			{#if (groupDetail && groupDetail.extensions.length > 0) || (focusedPanel === "apps" && selectedAppId !== null)}
-				<div class="panel ext-apps-panel">
+			<!-- Right: Target Apps -->
+			{#if selectedSourceId !== null}
+				<div
+					class="panel targets-panel"
+					class:panel-focused={focusedPanel === "targets"}
+				>
 					<div class="panel-header">
-						{#if focusedPanel === "apps" && selectedAppId !== null}
-							{@const selectedApp = sortedApps.find(a => a.id === selectedAppId)}
-							<h2>Apps for <span class="ext-apps-ext">{selectedApp?.name ?? "app"}</span></h2>
-						{:else if focusedPanel === "groups" && groupDetail}
-							<h2>Apps for <span class="ext-apps-ext">{groupDetail.group.name}</span></h2>
-						{:else if groupDetail?.extensions[extCursor]}
-							<h2>Apps for <span class="ext-apps-ext">.{groupDetail.extensions[extCursor].ext}</span></h2>
-						{:else}
-							<h2>Apps</h2>
-						{/if}
+						<h2>Reassign To</h2>
 					</div>
-					<div class="panel-body">
-						{#each visibleApps as app (app.id)}
-							<div
-								class="ext-app-item"
-								class:ext-app-assigned={groupDetail?.group.assigned_app_id === app.id}
+					<div
+						class="panel-body"
+						bind:this={panelBodyEls.targets}
+					>
+						{#each candidateTargets as app, i (app.id)}
+							<button
+								class="app-item"
+								class:cursor={targetCursor === i}
+								class:active={selectedTargetId === app.id}
+								onclick={() => {
+									focusedPanel = "targets";
+									targetCursor = i;
+									selectTarget(app.id);
+								}}
 							>
-								<span class="ext-app-name">{app.name}</span>
-								{#if focusedPanel !== "apps" && groupDetail && groupDetail.group.id !== -1}
-									<button
-										class="assign-btn"
-										class:assigned={groupDetail.group.assigned_app_id === app.id}
-										onclick={() => onAssignApp(groupDetail!.group.id, groupDetail!.group.assigned_app_id === app.id ? null : app.id)}
-										title={groupDetail.group.assigned_app_id === app.id ? "Unassign app" : "Assign app"}
-									>
-										{groupDetail.group.assigned_app_id === app.id ? "Assigned" : "Assign"}
-									</button>
-								{/if}
-							</div>
+								<span class="app-name">{app.name}</span>
+								<span class="badge"
+									>{app.ext_count}</span
+								>
+							</button>
 						{/each}
-						{#if visibleApps.length === 0}
-							<div class="empty">No apps found</div>
+						{#if candidateTargets.length === 0}
+							<div class="empty">
+								No other apps handle these extensions
+							</div>
 						{/if}
 					</div>
 				</div>
@@ -716,8 +577,7 @@
 
 	<footer>
 		<span>{summary[0]} apps</span>
-		<span>{summary[1]} groups</span>
-		<span>{summary[2]} extensions</span>
+		<span>{summary[1]} extensions</span>
 	</footer>
 </main>
 
@@ -778,38 +638,30 @@
 	}
 
 	.panel-focused .app-item.cursor,
-	.panel-focused .group-item.cursor,
 	.panel-focused .ext-item.cursor,
 	.panel-focused .cursor {
 		background: var(--ctp-blue);
 		color: var(--ctp-crust);
 	}
 
-	.panel-focused .cursor .group-name,
-	.panel-focused .cursor .assigned,
-	.panel-focused .cursor .unassigned,
 	.panel-focused .cursor .badge,
-	.panel-focused .cursor .delete-btn,
 	.panel-focused .cursor .ext-name,
-	.panel-focused .cursor .ext-desc {
+	.panel-focused .cursor .ext-desc,
+	.panel-focused .cursor .ext-default {
 		color: inherit;
 	}
 
-	.group-item.cursor,
-	.ext-item.cursor,
 	.app-item.cursor,
+	.ext-item.cursor,
 	.cursor {
 		background: var(--ctp-surface1);
 		color: var(--text-primary);
 	}
 
-	.cursor .group-name,
-	.cursor .assigned,
-	.cursor .unassigned,
 	.cursor .badge,
-	.cursor .delete-btn,
 	.cursor .ext-name,
-	.cursor .ext-desc {
+	.cursor .ext-desc,
+	.cursor .ext-default {
 		color: inherit;
 	}
 
@@ -826,13 +678,13 @@
 		min-width: 240px;
 	}
 
-	.groups-panel {
-		flex: 0 0 auto;
-		min-width: 300px;
-	}
-
 	.extensions-panel {
 		flex: 1;
+	}
+
+	.targets-panel {
+		flex: 0 0 auto;
+		min-width: 240px;
 	}
 
 	.panel-header {
@@ -849,13 +701,7 @@
 		font-size: 13px;
 		margin: 0;
 		font-weight: 600;
-	}
-
-	.toggle-btn {
-		padding: 2px 8px;
-		font-size: 11px;
-		font-weight: 600;
-		min-width: 64px;
+		white-space: nowrap;
 	}
 
 	.sort-toggle {
@@ -874,7 +720,6 @@
 		color: var(--text-primary);
 		font-size: 12px;
 	}
-
 
 	.panel-body {
 		flex: 1;
@@ -896,8 +741,7 @@
 		background: var(--bg-surface0);
 	}
 
-	.app-item,
-	.group-item {
+	.app-item {
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
@@ -912,8 +756,33 @@
 		cursor: pointer;
 	}
 
-	.app-item:hover,
-	.group-item:hover {
+	.app-item:hover {
+		background: var(--item-hover);
+	}
+
+	.app-item.active {
+		background: var(--ctp-surface0);
+	}
+
+	.badge {
+		font-size: 11px;
+		background: var(--badge-bg);
+		padding: 1px 6px;
+		border-radius: 8px;
+		color: var(--badge-text);
+	}
+
+	.ext-item {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 5px 12px;
+		cursor: pointer;
+		user-select: none;
+		font-size: 13px;
+	}
+
+	.ext-item:hover {
 		background: var(--item-hover);
 	}
 
@@ -927,109 +796,14 @@
 	}
 
 	.panel-focused .ext-item.selected .ext-name,
-	.panel-focused .ext-item.selected .ext-desc {
+	.panel-focused .ext-item.selected .ext-desc,
+	.panel-focused .ext-item.selected .ext-default {
 		color: inherit;
 	}
 
-	.group-item.drop-valid {
-		background: var(--drop-valid-bg);
-		outline: 2px solid var(--drop-valid-border);
-		outline-offset: -2px;
-	}
-
-	.group-item.drop-invalid {
-		opacity: 0.5;
-	}
-
-	.group-info {
-		display: flex;
-		flex-direction: column;
-		gap: 2px;
-		min-width: 0;
-		overflow: hidden;
-	}
-
-	.group-name {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.group-meta {
-		font-size: 11px;
-	}
-
-	.muted {
-		color: var(--text-muted);
-	}
-
-	.assigned {
-		color: var(--success);
-	}
-
-	.assigned.muted {
-		color: var(--text-muted);
-	}
-
-	.unassigned {
-		color: var(--text-muted);
-		font-style: italic;
-	}
-
-	.group-actions {
-		display: flex;
-		align-items: center;
-		gap: 4px;
-		flex-shrink: 0;
-	}
-
-	.badge {
-		font-size: 11px;
-		background: var(--badge-bg);
-		padding: 1px 6px;
-		border-radius: 8px;
-		color: var(--badge-text);
-	}
-
-	.delete-btn {
-		padding: 0 4px;
-		border: none;
-		background: transparent;
-		color: var(--text-muted);
-		font-size: 16px;
-		cursor: pointer;
-	}
-
-	.delete-btn:hover {
-		color: var(--danger);
-	}
-
-	.rename-input {
-		width: 100%;
-		padding: 2px 6px;
-		border: 1px solid var(--accent);
-		border-radius: 3px;
-		background: var(--bg-crust);
-		color: var(--text-primary);
-		font-size: 13px;
-	}
-
-	.ext-item {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		padding: 5px 12px;
-		cursor: grab;
-		user-select: none;
-		font-size: 13px;
-	}
-
-	.ext-item:hover {
-		background: var(--item-hover);
-	}
-
-	.ext-item.selected {
-		background: var(--item-selected);
+	.ext-item.greyed {
+		opacity: 0.3;
+		pointer-events: none;
 	}
 
 	.ext-name {
@@ -1046,6 +820,13 @@
 		white-space: nowrap;
 	}
 
+	.ext-default {
+		margin-left: auto;
+		color: var(--text-muted);
+		font-size: 11px;
+		white-space: nowrap;
+	}
+
 	.empty {
 		padding: 20px;
 		text-align: center;
@@ -1053,57 +834,26 @@
 		font-size: 13px;
 	}
 
-	.ext-apps-panel {
-		flex: 0 0 240px;
-	}
-
-	.ext-apps-ext {
-		font-family: "SF Mono", "Fira Code", monospace;
-		color: var(--accent);
-		font-weight: 500;
-	}
-
-	.ext-app-item {
-		display: flex;
-		align-items: center;
-		justify-content: space-between;
-		padding: 4px 12px;
-		font-size: 13px;
-	}
-
-	.ext-app-item:hover {
-		background: var(--item-hover);
-	}
-
-	.ext-app-item.ext-app-assigned {
-		color: var(--success);
-	}
-
-	.ext-app-name {
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.assign-btn {
-		padding: 1px 8px;
-		font-size: 11px;
-		border: 1px solid var(--border);
-		border-radius: 4px;
+	.reassign-bar {
+		padding: 8px 12px;
+		border-top: 1px solid var(--border);
 		background: var(--bg-mantle);
-		color: var(--text-muted);
-		cursor: pointer;
 		flex-shrink: 0;
 	}
 
-	.assign-btn:hover {
-		background: var(--bg-surface0);
-		color: var(--text-primary);
+	.reassign-btn {
+		width: 100%;
+		padding: 8px 16px;
+		background: var(--ctp-green);
+		color: var(--ctp-crust);
+		border: none;
+		border-radius: 6px;
+		font-size: 13px;
+		font-weight: 600;
+		cursor: pointer;
 	}
 
-	.assign-btn.assigned {
-		background: var(--success);
-		color: var(--ctp-crust);
-		border-color: var(--success);
+	.reassign-btn:hover {
+		opacity: 0.9;
 	}
 </style>

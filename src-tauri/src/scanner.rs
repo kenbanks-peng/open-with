@@ -45,7 +45,10 @@ fn extensions_for_uti(uti: &str) -> Vec<String> {
     let uti_cf = CFString::new(uti);
     let tag_class = unsafe { CFString::wrap_under_get_rule(kUTTagClassFilenameExtension) };
     let result = unsafe {
-        UTTypeCopyAllTagsWithClass(uti_cf.as_concrete_TypeRef(), tag_class.as_concrete_TypeRef())
+        UTTypeCopyAllTagsWithClass(
+            uti_cf.as_concrete_TypeRef(),
+            tag_class.as_concrete_TypeRef(),
+        )
     };
     if result.is_null() {
         return Vec::new();
@@ -133,8 +136,9 @@ fn ls_default_app_for_extension(ext: &str) -> Option<(String, String)> {
     }
     let uti: CFString = unsafe { CFString::wrap_under_create_rule(uti_ref) };
 
-    let handler_ref =
-        unsafe { LSCopyDefaultRoleHandlerForContentType(uti.as_concrete_TypeRef(), K_LS_ROLES_ALL) };
+    let handler_ref = unsafe {
+        LSCopyDefaultRoleHandlerForContentType(uti.as_concrete_TypeRef(), K_LS_ROLES_ALL)
+    };
     if handler_ref.is_null() {
         return None;
     }
@@ -223,10 +227,7 @@ fn scan_dirs() -> Vec<PathBuf> {
     dirs
 }
 
-fn process_app(
-    db: &Database,
-    app_path: &Path,
-) -> Result<(i64, usize), Box<dyn std::error::Error>> {
+fn process_app(db: &Database, app_path: &Path) -> Result<(i64, usize), Box<dyn std::error::Error>> {
     let plist_path = app_path.join("Contents/Info.plist");
     if !plist_path.exists() {
         return Err(format!("No Info.plist at {}", plist_path.display()).into());

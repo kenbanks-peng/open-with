@@ -9,11 +9,10 @@ export type Action =
 	| "toggle_select"
 	| "extend_up"
 	| "extend_down"
+	| "select_all"
 	| "search"
 	| "escape"
-	| "rename"
-	| "delete"
-	| "new_group"
+	| "reassign"
 	| "scroll_half_down"
 	| "scroll_half_up";
 
@@ -47,13 +46,12 @@ const keymap: { combo: KeyCombo; action: Action }[] = [
 	{ combo: { key: "ArrowDown", shift: true }, action: "extend_down" },
 	{ combo: { key: "K", shift: true }, action: "extend_up" },
 	{ combo: { key: "ArrowUp", shift: true }, action: "extend_up" },
+	{ combo: { key: "a" }, action: "select_all" },
 
 	// Actions
 	{ combo: { key: "/" }, action: "search" },
 	{ combo: { key: "Escape" }, action: "escape" },
-	{ combo: { key: "r" }, action: "rename" },
-	{ combo: { key: "d" }, action: "delete" },
-	{ combo: { key: "n" }, action: "new_group" },
+	{ combo: { key: "r" }, action: "reassign" },
 
 	// Scrolling
 	{ combo: { key: "d", ctrl: true }, action: "scroll_half_down" },
