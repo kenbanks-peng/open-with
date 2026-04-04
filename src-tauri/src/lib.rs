@@ -22,6 +22,7 @@ pub struct App {
 pub struct Extension {
     pub ext: String,
     pub description: String,
+    pub default_app_id: Option<i64>,
     pub default_app_name: Option<String>,
 }
 

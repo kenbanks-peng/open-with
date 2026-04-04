@@ -146,13 +146,13 @@ impl Database {
     /// Get extensions for a given app (by default_app_id), or all extensions if app_id is None.
     pub fn get_extensions_for_app(&self, app_id: Option<i64>) -> Result<Vec<Extension>> {
         let sql = if app_id.is_some() {
-            "SELECT e.ext, e.description, a.name
+            "SELECT e.ext, e.description, e.default_app_id, a.name
              FROM extensions e
              LEFT JOIN apps a ON a.id = e.default_app_id
              WHERE e.default_app_id = ?1
              ORDER BY e.ext"
         } else {
-            "SELECT e.ext, e.description, a.name
+            "SELECT e.ext, e.description, e.default_app_id, a.name
              FROM extensions e
              LEFT JOIN apps a ON a.id = e.default_app_id
              WHERE ?1 IS NULL
@@ -163,7 +163,8 @@ impl Database {
             Ok(Extension {
                 ext: r.get(0)?,
                 description: r.get(1)?,
-                default_app_name: r.get(2)?,
+                default_app_id: r.get(2)?,
+                default_app_name: r.get(3)?,
             })
         })?;
         rows.collect()

@@ -8,5 +8,6 @@ export interface App {
 export interface Extension {
 	ext: string;
 	description: string;
+	default_app_id: number | null;
 	default_app_name: string | null;
 }

@@ -41,12 +41,6 @@
 		targets: undefined,
 	});
 
-	let sortedApps = $derived(
-		appSort === "alpha"
-			? apps
-			: [...apps].sort((a, b) => b.ext_count - a.ext_count),
-	);
-
 	let activeExtensions = $derived(extFilter ? allExtensions : extensions);
 
 	let filteredExtensions = $derived(
@@ -61,6 +55,22 @@
 			: activeExtensions,
 	);
 
+	let visibleApps = $derived.by(() => {
+		if (!extFilter) return apps;
+		const ownerIds = new Set(
+			filteredExtensions
+				.map((e) => e.default_app_id)
+				.filter((id) => id !== null),
+		);
+		return apps.filter((a) => ownerIds.has(a.id));
+	});
+
+	let sortedApps = $derived(
+		appSort === "alpha"
+			? visibleApps
+			: [...visibleApps].sort((a, b) => b.ext_count - a.ext_count),
+	);
+
 	let sortedExtensions = $derived(
 		selectedTargetId !== null
 			? [...filteredExtensions].sort((a, b) => {
@@ -71,6 +81,17 @@
 				})
 			: filteredExtensions,
 	);
+
+	let selectedOwnerAppIds = $derived.by(() => {
+		if (selectedExts.size === 0) return new Set<number>();
+		const ids = new Set<number>();
+		for (const e of sortedExtensions) {
+			if (selectedExts.has(e.ext) && e.default_app_id !== null) {
+				ids.add(e.default_app_id);
+			}
+		}
+		return ids;
+	});
 
 	let greyedExts = $derived(
 		selectedTargetId !== null
@@ -131,7 +152,6 @@
 
 	async function selectTarget(appId: number | null) {
 		selectedTargetId = appId;
-		selectedExts = new Set();
 
 		if (appId !== null && selectedSourceId !== null) {
 			const eligible = await getEligibleExtensions(
@@ -139,6 +159,11 @@
 				appId,
 			);
 			eligibleExts = new Set(eligible);
+			// Drop any selected extensions that aren't eligible for this target
+			const next = new Set(
+				[...selectedExts].filter((ext) => eligible.includes(ext)),
+			);
+			selectedExts = next;
 		} else {
 			eligibleExts = new Set();
 		}
@@ -452,6 +477,7 @@
 							class="app-item"
 							class:cursor={appCursor === i}
 							class:active={selectedSourceId === app.id}
+							class:owner-highlight={selectedOwnerAppIds.has(app.id)}
 							onclick={() => {
 								focusedPanel = "apps";
 								appCursor = i;
@@ -767,6 +793,15 @@
 
 	.app-item.active {
 		background: var(--ctp-surface0);
+	}
+
+	.app-item.owner-highlight {
+		background: var(--ctp-surface1);
+		color: var(--ctp-yellow);
+	}
+
+	.app-item.owner-highlight .badge {
+		color: var(--ctp-yellow);
 	}
 
 	.badge {
