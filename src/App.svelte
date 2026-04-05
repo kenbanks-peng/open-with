@@ -760,17 +760,17 @@
 		</div>
 	{/if}
 
-	<footer class:footer-reassign={canReassign} onclick={canReassign ? doReassign : undefined} role={canReassign ? "button" : undefined}>
-		{#if canReassign}
-			<span class="reassign-label">
-				Reassign {selectedExts.size <= 3
-					? [...selectedExts].map(e => `.${e}`).join(", ")
-					: `${selectedExts.size} extensions`} from {reassignSourceApp?.name ?? "app"} to {reassignTargetApp?.name ?? "app"}
-			</span>
-		{:else}
-			<span>{summary[0]} apps</span>
-			<span>{summary[1]} extensions</span>
-		{/if}
+	{#if canReassign}
+		<button class="reassign-btn" onclick={doReassign}>
+			Reassign {selectedExts.size <= 3
+				? [...selectedExts].map(e => `.${e}`).join(", ")
+				: `${selectedExts.size} extensions`} from {reassignSourceApp?.name ?? "app"} to {reassignTargetApp?.name ?? "app"}
+		</button>
+	{/if}
+
+	<footer>
+		<span>{summary[0]} apps</span>
+		<span>{summary[1]} extensions</span>
 	</footer>
 </main>
 
@@ -804,12 +804,28 @@
 		font-size: 12px;
 		color: var(--text-muted);
 		flex-shrink: 0;
-		align-self: stretch;
-		margin: 0;
-		border-radius: 0;
-		transform: translateY(0);
-		box-shadow: none;
-		transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+	}
+
+	.reassign-btn {
+		position: fixed;
+		bottom: 40px;
+		left: 50%;
+		transform: translateX(-50%);
+		background: var(--ctp-green);
+		color: var(--ctp-crust);
+		border: none;
+		border-radius: 14px;
+		padding: 16px 48px;
+		font-weight: 600;
+		font-size: 15px;
+		cursor: pointer;
+		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
+		white-space: nowrap;
+		z-index: 10;
+	}
+
+	.reassign-btn:hover {
+		box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
 	}
 
 	.loading {
@@ -1053,29 +1069,4 @@
 		font-size: 13px;
 	}
 
-	.footer-reassign {
-		background: var(--ctp-green);
-		border-top-color: transparent;
-		border: none;
-		color: var(--ctp-crust);
-		cursor: pointer;
-		font-weight: 600;
-		font-size: 15px;
-		padding: 16px 48px;
-		align-self: center;
-		margin: 0 auto;
-		width: fit-content;
-		border-radius: 14px;
-		transform: translateY(-80px);
-		box-shadow: 0 4px 16px rgba(0, 0, 0, 0.25);
-	}
-
-	.footer-reassign:hover {
-		transform: translateY(-82px);
-		box-shadow: 0 6px 20px rgba(0, 0, 0, 0.3);
-	}
-
-	.reassign-label {
-		white-space: nowrap;
-	}
 </style>
