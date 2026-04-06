@@ -1085,6 +1085,8 @@
 		justify-content: space-between;
 		gap: 8px;
 		flex-shrink: 0;
+		height: 46px;
+		box-sizing: border-box;
 		transition: border-color var(--duration-normal) ease;
 	}
 
