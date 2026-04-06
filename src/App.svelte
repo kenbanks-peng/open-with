@@ -117,8 +117,8 @@
 	let targetCursor = $state(0);
 
 	let canReassign = $derived(selectedExts.size > 0 && selectedTargetId !== null && selectedSourceId !== null);
-	let reassignSourceApp = $derived(canReassign ? apps.find((a) => a.id === selectedSourceId) : null);
-	let reassignTargetApp = $derived(canReassign ? displayedTargets.find((a) => a.id === selectedTargetId) : null);
+	let reassignSourceApp = $derived(selectedSourceId !== null ? apps.find((a) => a.id === selectedSourceId) : null);
+	let reassignTargetApp = $derived(selectedTargetId !== null ? (apps.find((a) => a.id === selectedTargetId) ?? displayedTargets.find((a) => a.id === selectedTargetId)) : null);
 
 	let selectedOwnerAppIds = $derived.by(() => {
 		if (selectedExts.size === 0) return new Set<number>();
@@ -784,27 +784,37 @@
 		</div>
 	{/if}
 
-	{#if canReassign}
-		<div class="reassign-surface">
-			<div class="reassign-apps">
-				<span class="reassign-from">{reassignSourceApp?.name ?? "app"}</span>
-				<span class="reassign-arrow">&#x279C;</span>
-				<span class="reassign-to">{reassignTargetApp?.name ?? "app"}</span>
-			</div>
-			<div class="reassign-exts">
-				{#each [...selectedExts] as ext, i (ext)}
-					<span class="reassign-ext-bubble" style="animation-delay: {i * 30}ms">.{ext}</span>
-				{/each}
-			</div>
-			<button class="reassign-btn" onclick={doReassign}>
-				Reassign
-			</button>
-		</div>
-	{/if}
-
-	<footer>
-		<span>{summary[0]} apps</span>
-		<span>{summary[1]} extensions</span>
+	<footer class:footer-active={canReassign}>
+		<span class="footer-side footer-side-left">
+			<span class="footer-stat">{summary[0]} apps</span>
+			<span class="footer-sep">&middot;</span>
+			<span class="footer-stat">{summary[1]} extensions</span>
+		</span>
+		<span class="footer-center">
+			<span class="reassign-exts" class:is-placeholder={selectedExts.size === 0}>
+				{#if selectedExts.size === 0}
+					<span class="reassign-ext-bubble placeholder-bubble">.ext</span>
+				{:else}
+					{#each [...selectedExts] as ext (ext)}
+						<span class="reassign-ext-bubble">.{ext}</span>
+					{/each}
+				{/if}
+			</span>
+			<span class="reassign-from">
+				{reassignSourceApp?.name ?? ""}
+			</span>
+			<button
+				class="reassign-btn"
+				onclick={doReassign}
+				disabled={!canReassign}
+				title="Reassign"
+				aria-label="Reassign"
+			>&#x279C;</button>
+			<span class="reassign-to" class:is-placeholder={!reassignTargetApp}>
+				{reassignTargetApp?.name ?? "target"}
+			</span>
+		</span>
+		<span class="footer-side footer-side-right"></span>
 	</footer>
 </main>
 
@@ -841,15 +851,40 @@
 	footer {
 		display: flex;
 		align-items: center;
-		justify-content: center;
-		gap: 16px;
-		padding: 8px 20px;
+		gap: 10px;
+		padding: 6px 16px;
 		background: linear-gradient(180deg, var(--ctp-crust) 0%, var(--bg-mantle) 100%);
 		border-top: none;
 		font-size: var(--font-sm);
 		color: var(--text-muted);
 		flex-shrink: 0;
 		position: relative;
+		min-height: 36px;
+		box-sizing: border-box;
+		transition: color var(--duration-normal) ease;
+	}
+
+	.footer-side {
+		flex: 1;
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		min-width: 0;
+	}
+
+	.footer-side-right {
+		justify-content: flex-end;
+	}
+
+	.footer-center {
+		display: flex;
+		align-items: center;
+		gap: 10px;
+		flex-shrink: 0;
+	}
+
+	.footer-sep {
+		color: var(--text-faint);
 	}
 
 	footer::before {
@@ -862,122 +897,99 @@
 		background: linear-gradient(90deg, transparent, var(--ctp-surface1), transparent);
 	}
 
-	/* Reassign surface */
-	.reassign-surface {
-		position: fixed;
-		bottom: 40px;
-		left: 50%;
-		transform: translateX(-50%);
-		background: rgba(49, 50, 68, 0.85);
-		backdrop-filter: blur(16px);
-		-webkit-backdrop-filter: blur(16px);
-		border: 1px solid rgba(166, 227, 161, 0.15);
-		border-radius: 16px;
-		padding: 14px 28px 16px;
-		display: flex;
-		flex-direction: column;
-		align-items: center;
-		gap: 14px;
-		box-shadow:
-			0 8px 40px rgba(0, 0, 0, 0.5),
-			0 0 1px rgba(166, 227, 161, 0.2),
-			inset 0 1px 0 rgba(255, 255, 255, 0.03);
-		z-index: 10;
-		white-space: nowrap;
-		animation: surface-in 0.25s var(--ease-out-expo);
+	/* Reassign controls (in footer) */
+	.is-placeholder {
+		opacity: 0.4;
+		font-style: italic;
 	}
 
-	@keyframes surface-in {
-		from {
-			opacity: 0;
-			transform: translateX(-50%) translateY(16px) scale(0.97);
-			filter: blur(4px);
-		}
-		to {
-			opacity: 1;
-			transform: translateX(-50%) translateY(0) scale(1);
-			filter: blur(0);
-		}
-	}
-
-	.reassign-apps {
-		display: flex;
-		align-items: center;
-		gap: 10px;
-		font-size: var(--font-md);
+	.placeholder-bubble {
+		opacity: 1;
+		font-style: normal;
+		color: var(--text-faint) !important;
+		background: transparent !important;
+		border: 1px dashed var(--border);
+		padding: 0 5px !important;
 	}
 
 	.reassign-exts {
 		display: flex;
-		flex-wrap: wrap;
-		justify-content: center;
-		gap: 6px;
-		max-width: 360px;
+		align-items: center;
+		gap: 4px;
+		flex-wrap: nowrap;
 	}
 
 	.reassign-ext-bubble {
 		font-family: var(--font-mono);
-		font-size: var(--font-sm);
+		font-size: var(--font-xs);
 		font-weight: 600;
 		color: var(--accent-ext);
 		background: var(--bg-crust);
-		padding: 2px 8px;
-		border-radius: 6px;
-		animation: bubble-in 0.2s var(--ease-out-expo) both;
-	}
-
-	@keyframes bubble-in {
-		from {
-			opacity: 0;
-			transform: scale(0.8) translateY(4px);
-		}
-		to {
-			opacity: 1;
-			transform: scale(1) translateY(0);
-		}
+		padding: 1px 6px;
+		border-radius: 4px;
+		white-space: nowrap;
 	}
 
 	.reassign-from {
-		font-size: var(--font-md);
-		font-weight: 500;
-		color: var(--text-muted);
+		font-size: var(--font-sm);
+		font-weight: 600;
+		color: var(--text-primary);
+		white-space: nowrap;
 	}
 
 	.reassign-to {
-		font-size: var(--font-md);
+		font-size: var(--font-sm);
 		font-weight: 600;
 		color: var(--text-primary);
+		white-space: nowrap;
 	}
 
 	.reassign-arrow {
-		font-size: 14px;
+		font-size: 12px;
 		color: var(--accent-target);
 	}
 
 	.reassign-btn {
-		background: var(--ctp-green);
-		color: var(--ctp-crust);
+		background: transparent;
+		color: var(--ctp-green);
 		border: none;
-		border-radius: 8px;
-		padding: 8px 32px;
-		font-weight: 600;
-		font-size: var(--font-md);
+		border-radius: 4px;
+		padding: 0 6px;
+		font-size: 16px;
+		line-height: 1;
 		cursor: pointer;
-		width: 100%;
+		flex-shrink: 0;
+		text-shadow: 0 0 8px rgba(166, 227, 161, 0.4);
 		transition:
-			background var(--duration-fast) ease,
-			box-shadow var(--duration-normal) ease,
+			color var(--duration-fast) ease,
+			text-shadow var(--duration-normal) ease,
 			transform 0.05s ease;
 	}
 
 	.reassign-btn:hover {
-		background: #b5e8b2;
-		box-shadow: 0 0 16px rgba(166, 227, 161, 0.3);
+		color: #b5e8b2;
+		background: transparent;
+		text-shadow: 0 0 12px rgba(166, 227, 161, 0.7);
+		transform: translateX(1px);
 	}
 
 	.reassign-btn:active {
-		background: #93d990;
-		transform: scale(0.98);
+		color: #93d990;
+		transform: scale(0.95);
+	}
+
+	.reassign-btn:disabled {
+		color: var(--text-faint);
+		cursor: not-allowed;
+		text-shadow: none;
+		opacity: 0.4;
+	}
+
+	.reassign-btn:disabled:hover {
+		color: var(--text-faint);
+		background: transparent;
+		text-shadow: none;
+		transform: none;
 	}
 
 	/* Loading */
