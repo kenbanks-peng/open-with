@@ -4,6 +4,7 @@
 		getApps,
 		getExtensionsForApp,
 		getCandidateTargets,
+		getExtensionTargetCounts,
 		getEligibleExtensions,
 		reassignExtensions,
 		getAppsForExtension,
@@ -22,6 +23,7 @@
 	let candidateTargets: App[] = $state([]);
 	let filteredTargets: App[] = $state([]);
 	let eligibleExts: Set<string> = $state(new Set());
+	let extTargetCounts: Map<string, number> = $state(new Map());
 	let selectedExts: Set<string> = $state(new Set());
 	let summary: [number, number] = $state([0, 0]);
 
@@ -88,7 +90,14 @@
 			: [...visibleApps].sort((a, b) => b.ext_count - a.ext_count),
 	);
 
-	let sortedExtensions = $derived(filteredExtensions);
+	let sortedExtensions = $derived.by(() => {
+		if (selectedTargetId !== null || extFilter || extTargetCounts.size === 0) return filteredExtensions;
+		return [...filteredExtensions].sort((a, b) => {
+			const ca = extTargetCounts.get(a.ext) ?? 0;
+			const cb = extTargetCounts.get(b.ext) ?? 0;
+			return cb - ca;
+		});
+	});
 
 	let appCursor = $derived(
 		selectedSourceId !== null
@@ -188,17 +197,20 @@
 		targetFilter = "";
 
 		if (appId !== null) {
-			const [exts, targets] = await Promise.all([
+			const [exts, targets, counts] = await Promise.all([
 				getExtensionsForApp(appId),
 				getCandidateTargets(appId),
+				getExtensionTargetCounts(appId),
 			]);
 			extensions = exts;
 			candidateTargets = targets;
 			filteredTargets = targets;
+			extTargetCounts = new Map(counts);
 		} else {
 			extensions = await getExtensionsForApp();
 			candidateTargets = [];
 			filteredTargets = [];
+			extTargetCounts = new Map();
 		}
 	}
 
@@ -209,13 +221,15 @@
 		eligibleExts = new Set();
 		targetExtensions = [];
 
-		const [exts, targets] = await Promise.all([
+		const [exts, targets, counts] = await Promise.all([
 			getExtensionsForApp(appId),
 			getCandidateTargets(appId),
+			getExtensionTargetCounts(appId),
 		]);
 		extensions = exts;
 		candidateTargets = targets;
 		filteredTargets = targets;
+		extTargetCounts = new Map(counts);
 	}
 
 	async function selectTarget(appId: number | null) {
@@ -591,7 +605,12 @@
 
 <main>
 	{#if loading}
-		<div class="loading">Loading...</div>
+		<div class="loading">
+			<div class="loading-dots">
+				<span></span><span></span><span></span>
+			</div>
+			<span class="loading-text">Scanning applications</span>
+		</div>
 	{:else}
 		<div class="panels">
 			<!-- Left: Source Apps -->
@@ -666,6 +685,7 @@
 						<div
 							class="ext-item"
 							class:selected={selectedExts.has(ext.ext)}
+							class:dimmed={selectedTargetId === null && !extFilter && extTargetCounts.size > 0 && (extTargetCounts.get(ext.ext) ?? 0) === 0}
 							class:cursor={extCursor === i}
 							role="option"
 							aria-selected={selectedExts.has(ext.ext)}
@@ -696,7 +716,10 @@
 						</div>
 					{/each}
 					{#if sortedExtensions.length === 0}
-						<div class="empty">No extensions</div>
+						<div class="empty">
+							<span class="empty-icon">&#x2205;</span>
+							<span class="empty-label">{extFilter ? 'No matching extensions' : 'No extensions for this app'}</span>
+						</div>
 					{/if}
 				</div>
 				</div>
@@ -751,7 +774,8 @@
 						{/each}
 						{#if displayedTargets.length === 0}
 							<div class="empty">
-								{browseAll ? 'No matching apps' : selectedExts.size === 1 ? `No other apps for .${[...selectedExts][0]}` : 'No other apps for selection'}
+								<span class="empty-icon">&#x21A6;</span>
+								<span class="empty-label">{browseAll ? 'No matching apps' : selectedExts.size === 1 ? `No other apps for .${[...selectedExts][0]}` : 'No other apps for selection'}</span>
 							</div>
 						{/if}
 					</div>
@@ -768,8 +792,8 @@
 				<span class="reassign-to">{reassignTargetApp?.name ?? "app"}</span>
 			</div>
 			<div class="reassign-exts">
-				{#each [...selectedExts] as ext (ext)}
-					<span class="reassign-ext-bubble">.{ext}</span>
+				{#each [...selectedExts] as ext, i (ext)}
+					<span class="reassign-ext-bubble" style="animation-delay: {i * 30}ms">.{ext}</span>
 				{/each}
 			</div>
 			<button class="reassign-btn" onclick={doReassign}>
@@ -787,20 +811,31 @@
 <style>
 	:global(body) {
 		margin: 0;
-		font-family:
-			-apple-system,
-			BlinkMacSystemFont,
-			"Segoe UI",
-			Roboto,
-			sans-serif;
-		background: var(--bg-base);
+		font-family: var(--font-ui);
+		background: linear-gradient(145deg, #1e1e2e 0%, #1a1a2a 50%, #1c1c30 100%);
 		color: var(--text-primary);
+		-webkit-font-smoothing: antialiased;
+		text-rendering: optimizeLegibility;
 	}
 
 	main {
 		display: flex;
 		flex-direction: column;
 		height: 100vh;
+		position: relative;
+	}
+
+	/* Noise texture overlay */
+	main::before {
+		content: '';
+		position: fixed;
+		inset: 0;
+		pointer-events: none;
+		z-index: 100;
+		opacity: 0.03;
+		background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+		background-repeat: repeat;
+		background-size: 256px 256px;
 	}
 
 	footer {
@@ -808,21 +843,35 @@
 		align-items: center;
 		justify-content: center;
 		gap: 16px;
-		padding: 6px 16px;
-		background: var(--bg-mantle);
-		border-top: 1px solid var(--border);
-		font-size: 12px;
+		padding: 8px 20px;
+		background: linear-gradient(180deg, var(--ctp-crust) 0%, var(--bg-mantle) 100%);
+		border-top: none;
+		font-size: var(--font-sm);
 		color: var(--text-muted);
 		flex-shrink: 0;
+		position: relative;
 	}
 
+	footer::before {
+		content: '';
+		position: absolute;
+		top: 0;
+		left: 5%;
+		right: 5%;
+		height: 1px;
+		background: linear-gradient(90deg, transparent, var(--ctp-surface1), transparent);
+	}
+
+	/* Reassign surface */
 	.reassign-surface {
 		position: fixed;
 		bottom: 40px;
 		left: 50%;
 		transform: translateX(-50%);
-		background: var(--bg-surface0);
-		border: 1px solid var(--ctp-surface2);
+		background: rgba(49, 50, 68, 0.85);
+		backdrop-filter: blur(16px);
+		-webkit-backdrop-filter: blur(16px);
+		border: 1px solid rgba(166, 227, 161, 0.15);
 		border-radius: 16px;
 		padding: 14px 28px 16px;
 		display: flex;
@@ -830,21 +879,24 @@
 		align-items: center;
 		gap: 14px;
 		box-shadow:
-			0 8px 32px rgba(0, 0, 0, 0.4),
-			0 0 0 1px rgba(137, 180, 250, 0.08);
+			0 8px 40px rgba(0, 0, 0, 0.5),
+			0 0 1px rgba(166, 227, 161, 0.2),
+			inset 0 1px 0 rgba(255, 255, 255, 0.03);
 		z-index: 10;
 		white-space: nowrap;
-		animation: surface-in 0.15s ease-out;
+		animation: surface-in 0.25s var(--ease-out-expo);
 	}
 
 	@keyframes surface-in {
 		from {
 			opacity: 0;
-			transform: translateX(-50%) translateY(8px);
+			transform: translateX(-50%) translateY(16px) scale(0.97);
+			filter: blur(4px);
 		}
 		to {
 			opacity: 1;
-			transform: translateX(-50%) translateY(0);
+			transform: translateX(-50%) translateY(0) scale(1);
+			filter: blur(0);
 		}
 	}
 
@@ -852,7 +904,7 @@
 		display: flex;
 		align-items: center;
 		gap: 10px;
-		font-size: 13px;
+		font-size: var(--font-md);
 	}
 
 	.reassign-exts {
@@ -864,30 +916,42 @@
 	}
 
 	.reassign-ext-bubble {
-		font-family: "SF Mono", "Fira Code", monospace;
-		font-size: 11px;
+		font-family: var(--font-mono);
+		font-size: var(--font-sm);
 		font-weight: 600;
-		color: var(--accent);
+		color: var(--accent-ext);
 		background: var(--bg-crust);
 		padding: 2px 8px;
 		border-radius: 6px;
+		animation: bubble-in 0.2s var(--ease-out-expo) both;
+	}
+
+	@keyframes bubble-in {
+		from {
+			opacity: 0;
+			transform: scale(0.8) translateY(4px);
+		}
+		to {
+			opacity: 1;
+			transform: scale(1) translateY(0);
+		}
 	}
 
 	.reassign-from {
-		font-size: 13px;
+		font-size: var(--font-md);
 		font-weight: 500;
 		color: var(--text-muted);
 	}
 
 	.reassign-to {
-		font-size: 13px;
+		font-size: var(--font-md);
 		font-weight: 600;
 		color: var(--text-primary);
 	}
 
 	.reassign-arrow {
 		font-size: 14px;
-		color: var(--ctp-green);
+		color: var(--accent-target);
 	}
 
 	.reassign-btn {
@@ -897,28 +961,65 @@
 		border-radius: 8px;
 		padding: 8px 32px;
 		font-weight: 600;
-		font-size: 13px;
+		font-size: var(--font-md);
 		cursor: pointer;
 		width: 100%;
-		transition: background 0.1s ease;
+		transition:
+			background var(--duration-fast) ease,
+			box-shadow var(--duration-normal) ease,
+			transform 0.05s ease;
 	}
 
 	.reassign-btn:hover {
 		background: #b5e8b2;
+		box-shadow: 0 0 16px rgba(166, 227, 161, 0.3);
 	}
 
 	.reassign-btn:active {
 		background: #93d990;
+		transform: scale(0.98);
 	}
 
+	/* Loading */
 	.loading {
 		display: flex;
+		flex-direction: column;
 		align-items: center;
 		justify-content: center;
 		flex: 1;
+		gap: 16px;
 		color: var(--text-muted);
 	}
 
+	.loading-text {
+		font-size: var(--font-xs);
+		letter-spacing: var(--tracking-widest);
+		text-transform: uppercase;
+		color: var(--text-faint);
+	}
+
+	.loading-dots {
+		display: flex;
+		gap: 6px;
+	}
+
+	.loading-dots span {
+		width: 6px;
+		height: 6px;
+		border-radius: 50%;
+		background: var(--accent-focus);
+		animation: dot-pulse 1.2s ease-in-out infinite;
+	}
+
+	.loading-dots span:nth-child(2) { animation-delay: 0.15s; }
+	.loading-dots span:nth-child(3) { animation-delay: 0.3s; }
+
+	@keyframes dot-pulse {
+		0%, 80%, 100% { opacity: 0.2; transform: scale(0.8); }
+		40% { opacity: 1; transform: scale(1); }
+	}
+
+	/* Panels */
 	.panels {
 		display: flex;
 		flex: 1;
@@ -928,69 +1029,104 @@
 	.panel {
 		display: flex;
 		flex-direction: column;
-		border-right: 1px solid var(--border);
+		border-right: none;
 		min-width: 0;
+		position: relative;
+	}
+
+	/* Gradient dividers */
+	.panel:not(:last-child)::after {
+		content: '';
+		position: absolute;
+		right: 0;
+		top: 10%;
+		bottom: 10%;
+		width: 1px;
+		background: linear-gradient(
+			180deg,
+			transparent 0%,
+			var(--ctp-surface2) 30%,
+			var(--ctp-surface2) 70%,
+			transparent 100%
+		);
+		z-index: 1;
 	}
 
 	.panel-focused .panel-header {
-		border-bottom-color: var(--accent);
+		border-bottom-color: var(--accent-focus);
 	}
 
 	.panel-focused .app-item.cursor:not(.active),
 	.panel-focused .ext-item.cursor:not(.selected) {
-		outline: 1px solid var(--ctp-blue);
+		outline: 1px solid var(--accent-focus);
 		outline-offset: -1px;
 	}
 
-	.panel:last-child {
-		border-right: none;
-	}
-
 	.apps-panel {
-		flex: 0 0 auto;
-		min-width: 240px;
+		flex: 0 0 220px;
+		max-width: 260px;
 	}
 
 	.extensions-panel {
 		flex: 1;
+		min-width: 300px;
 	}
 
 	.targets-panel {
-		flex: 0 0 auto;
-		min-width: 240px;
+		flex: 0 0 240px;
+		max-width: 280px;
 	}
 
 	.panel-header {
-		padding: 8px 12px;
+		padding: 10px 12px 8px;
 		border-bottom: 1px solid var(--border);
 		display: flex;
 		align-items: center;
 		justify-content: space-between;
 		gap: 8px;
 		flex-shrink: 0;
+		transition: border-color var(--duration-normal) ease;
 	}
 
 	.panel-header h2 {
-		font-size: 13px;
+		font-size: var(--font-xs);
 		margin: 0;
 		font-weight: 600;
 		white-space: nowrap;
+		letter-spacing: var(--tracking-widest);
+		text-transform: uppercase;
+		color: var(--text-muted);
 	}
 
 	.sort-toggle {
 		padding: 2px 8px;
-		font-size: 11px;
+		font-size: var(--font-sm);
 		font-weight: 600;
 		min-width: 40px;
+		position: relative;
+	}
+
+	.sort-toggle::after {
+		content: '';
+		position: absolute;
+		bottom: -1px;
+		left: 50%;
+		transform: translateX(-50%);
+		width: 12px;
+		height: 2px;
+		border-radius: 1px;
+		background: var(--accent-focus);
+		opacity: 0.6;
 	}
 
 	.any-toggle {
 		padding: 2px 8px;
-		font-size: 11px;
+		font-size: var(--font-sm);
 		font-weight: 600;
 		color: var(--text-muted);
 		border-color: var(--border);
 		background: var(--bg-mantle);
+		transition: color var(--duration-fast) ease, border-color var(--duration-fast) ease;
 	}
 
 	.any-toggle.any-active {
@@ -1006,7 +1142,17 @@
 		border-radius: 4px;
 		background: var(--bg-crust);
 		color: var(--text-primary);
-		font-size: 12px;
+		font-size: var(--font-base);
+		font-family: var(--font-ui);
+		transition:
+			border-color var(--duration-normal) ease,
+			box-shadow var(--duration-normal) ease;
+	}
+
+	.panel-header input[type="text"]:focus {
+		outline: none;
+		border-color: var(--accent-focus);
+		box-shadow: 0 0 0 2px rgba(203, 166, 247, 0.15);
 	}
 
 	.search-box {
@@ -1041,7 +1187,25 @@
 	.panel-body {
 		flex: 1;
 		overflow-y: auto;
-		padding: 4px 0;
+		padding: 4px 4px;
+	}
+
+	/* Custom scrollbars */
+	.panel-body::-webkit-scrollbar {
+		width: 6px;
+	}
+
+	.panel-body::-webkit-scrollbar-track {
+		background: transparent;
+	}
+
+	.panel-body::-webkit-scrollbar-thumb {
+		background: var(--ctp-surface1);
+		border-radius: 3px;
+	}
+
+	.panel-body::-webkit-scrollbar-thumb:hover {
+		background: var(--ctp-surface2);
 	}
 
 	button {
@@ -1050,12 +1214,20 @@
 		border-radius: 4px;
 		background: var(--bg-mantle);
 		color: var(--text-primary);
-		font-size: 12px;
+		font-size: var(--font-base);
+		font-family: var(--font-ui);
 		cursor: pointer;
+		transition:
+			background var(--duration-fast) ease,
+			transform 0.05s ease;
 	}
 
 	button:hover {
 		background: var(--bg-surface0);
+	}
+
+	button:active {
+		transform: scale(0.98);
 	}
 
 	.app-item {
@@ -1064,49 +1236,85 @@
 		justify-content: space-between;
 		width: 100%;
 		box-sizing: border-box;
-		padding: 6px 12px;
+		padding: 6px 10px;
 		border: none;
-		border-radius: 0;
+		border-left: 2px solid transparent;
+		border-radius: 6px;
 		background: transparent;
 		text-align: left;
-		font-size: 13px;
+		font-size: var(--font-md);
 		cursor: pointer;
 		outline: none;
+		transition:
+			background var(--duration-fast) ease,
+			color var(--duration-fast) ease,
+			border-color var(--duration-fast) ease;
 	}
 
 	.app-item:hover {
 		background: var(--item-hover);
 	}
 
-	.app-item.active,
-	.app-item.owner-highlight {
-		background: var(--ctp-blue);
-		color: var(--ctp-crust);
+	.app-item.active {
+		background: var(--item-selected-app);
+		color: var(--accent-source);
+		border-left-color: var(--accent-source);
+		box-shadow: inset 0 0 20px var(--glow-source);
 	}
 
-	.app-item.active .badge,
-	.app-item.owner-highlight .badge {
-		color: inherit;
+	.app-item.active .badge {
+		color: var(--accent-source);
+		background: transparent;
+	}
+
+	.app-item.owner-highlight:not(.active) {
+		background: rgba(180, 190, 254, 0.08);
+		color: var(--text-primary);
+		border-left-color: rgba(180, 190, 254, 0.3);
+	}
+
+	.app-item.owner-highlight:not(.active) .badge {
+		color: var(--badge-text);
+		background: var(--badge-bg);
+	}
+
+	/* Fallback for combined active + owner-highlight */
+	.app-item.active.owner-highlight {
+		background: var(--item-selected-app);
+		color: var(--accent-source);
+		border-left-color: var(--accent-source);
+	}
+
+	.app-item.active.owner-highlight .badge {
+		color: var(--accent-source);
 		background: transparent;
 	}
 
 	.badge {
-		font-size: 11px;
+		font-size: var(--font-sm);
+		font-variant-numeric: tabular-nums;
 		background: var(--badge-bg);
 		padding: 1px 6px;
 		border-radius: 8px;
 		color: var(--badge-text);
+		min-width: 24px;
+		text-align: center;
 	}
 
 	.ext-item {
 		display: flex;
 		align-items: center;
 		gap: 8px;
-		padding: 5px 12px;
+		padding: 5px 10px;
+		margin: 0 0;
+		border-radius: 6px;
 		cursor: pointer;
 		user-select: none;
-		font-size: 13px;
+		font-size: var(--font-md);
 		outline: none;
+		transition:
+			background var(--duration-fast) ease,
+			color var(--duration-fast) ease;
 	}
 
 	.ext-item:hover {
@@ -1114,25 +1322,45 @@
 	}
 
 	.ext-item.selected {
-		background: var(--ctp-blue);
-		color: var(--ctp-crust);
+		background: var(--item-selected-ext);
+		color: var(--text-primary);
+		animation: select-flash 0.3s ease;
 	}
 
-	.ext-item.selected .ext-name,
-	.ext-item.selected .ext-desc,
+	@keyframes select-flash {
+		0% { background: rgba(116, 199, 236, 0.3); }
+		100% { background: var(--item-selected-ext); }
+	}
+
+	.ext-item.selected .ext-name {
+		color: var(--accent-ext);
+	}
+
+	.ext-item.selected .ext-desc {
+		color: var(--text-secondary);
+	}
+
 	.ext-item.selected .ext-default {
-		color: inherit;
+		color: var(--text-secondary);
+	}
+
+	.ext-item.dimmed .ext-name,
+	.ext-item.dimmed .ext-desc,
+	.ext-item.dimmed .ext-default {
+		color: var(--ctp-overlay0);
 	}
 
 	.ext-name {
-		font-family: "SF Mono", "Fira Code", monospace;
+		font-family: var(--font-mono);
 		font-weight: 500;
+		letter-spacing: 0.02em;
+		font-size: var(--font-base);
 		color: var(--accent);
 	}
 
 	.ext-desc {
 		color: var(--text-muted);
-		font-size: 12px;
+		font-size: var(--font-base);
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
@@ -1141,15 +1369,28 @@
 	.ext-default {
 		margin-left: auto;
 		color: var(--text-muted);
-		font-size: 11px;
+		font-size: var(--font-sm);
 		white-space: nowrap;
 	}
 
+	/* Empty & loading states */
 	.empty {
-		padding: 20px;
-		text-align: center;
+		display: flex;
+		flex-direction: column;
+		align-items: center;
+		justify-content: center;
+		padding: 40px 20px;
+		gap: 8px;
 		color: var(--text-faint);
-		font-size: 13px;
 	}
 
+	.empty-icon {
+		font-size: 24px;
+		opacity: 0.4;
+	}
+
+	.empty-label {
+		font-size: var(--font-base);
+		letter-spacing: 0.02em;
+	}
 </style>

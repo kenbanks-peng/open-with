@@ -290,6 +290,21 @@ impl Database {
         rows.collect()
     }
 
+    /// For each extension defaulted to source_app_id, count how many other apps can open it.
+    pub fn get_extension_target_counts(&self, source_app_id: i64) -> Result<Vec<(String, i64)>> {
+        let sql = "SELECT e.ext, COUNT(ea.app_id) as target_count
+                   FROM extensions e
+                   LEFT JOIN ext_apps ea ON ea.ext = e.ext AND ea.app_id != ?1
+                   WHERE e.default_app_id = ?1
+                   GROUP BY e.ext
+                   ORDER BY e.ext";
+        let mut stmt = self.conn.prepare(sql)?;
+        let rows = stmt.query_map(params![source_app_id], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?))
+        })?;
+        rows.collect()
+    }
+
     pub fn get_summary(&self) -> Result<(i64, i64)> {
         let app_count: i64 = self
             .conn

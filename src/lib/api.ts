@@ -22,6 +22,12 @@ export async function getEligibleExtensions(
 	return invoke("get_eligible_extensions", { sourceAppId, targetAppId });
 }
 
+export async function getExtensionTargetCounts(
+	sourceAppId: number,
+): Promise<[string, number][]> {
+	return invoke("get_extension_target_counts", { sourceAppId });
+}
+
 export async function reassignExtensions(
 	exts: string[],
 	targetAppId: number,

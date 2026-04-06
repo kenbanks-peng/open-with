@@ -27,7 +27,20 @@
 	--ctp-mantle: #181825;
 	--ctp-crust: #11111b;
 
-	/* Semantic tokens */
+	/* Typography */
+	--font-ui: 'Geist', -apple-system, BlinkMacSystemFont, sans-serif;
+	--font-mono: 'JetBrains Mono', 'SF Mono', monospace;
+	--font-xs: 10px;
+	--font-sm: 11px;
+	--font-base: 12.5px;
+	--font-md: 13px;
+	--font-lg: 15px;
+	--tracking-tight: -0.01em;
+	--tracking-normal: 0em;
+	--tracking-wide: 0.04em;
+	--tracking-widest: 0.06em;
+
+	/* Semantic backgrounds */
 	--bg-base: var(--ctp-base);
 	--bg-mantle: var(--ctp-mantle);
 	--bg-crust: var(--ctp-crust);
@@ -35,24 +48,46 @@
 	--bg-surface1: var(--ctp-surface1);
 	--bg-surface2: var(--ctp-surface2);
 
+	/* Text */
 	--text-primary: var(--ctp-text);
 	--text-secondary: var(--ctp-subtext0);
 	--text-muted: var(--ctp-overlay1);
 	--text-faint: var(--ctp-overlay0);
 
+	/* Borders */
 	--border: var(--ctp-surface1);
 
-	--accent: var(--ctp-blue);
+	/* Accent differentiation */
+	--accent: var(--ctp-sapphire);
+	--accent-source: var(--ctp-lavender);
+	--accent-ext: var(--ctp-sapphire);
+	--accent-target: var(--ctp-green);
+	--accent-focus: var(--ctp-mauve);
 	--accent-hover: var(--ctp-sapphire);
 	--success: var(--ctp-green);
 	--danger: var(--ctp-red);
 
-	--item-hover: var(--ctp-surface0);
+	/* Glow effects */
+	--glow-source: rgba(180, 190, 254, 0.08);
+	--glow-ext: rgba(116, 199, 236, 0.06);
+	--glow-target: rgba(166, 227, 161, 0.06);
+
+	/* Item states */
+	--item-hover: rgba(49, 50, 68, 0.6);
 	--item-selected: var(--ctp-surface1);
+	--item-selected-app: rgba(180, 190, 254, 0.18);
+	--item-selected-ext: rgba(116, 199, 236, 0.15);
 
 	--drop-valid-bg: #1a4a2a;
 	--drop-valid-border: var(--ctp-green);
 
 	--badge-bg: var(--ctp-surface0);
 	--badge-text: var(--ctp-subtext0);
+
+	/* Motion */
+	--ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
+	--ease-out-quart: cubic-bezier(0.25, 1, 0.5, 1);
+	--duration-fast: 0.1s;
+	--duration-normal: 0.18s;
+	--duration-slow: 0.3s;
 }
