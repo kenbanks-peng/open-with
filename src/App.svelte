@@ -38,8 +38,15 @@
 	let allApps: App[] = $state([]);
 	let targetFilterInputEl: HTMLInputElement | undefined = $state(undefined);
 
-	type Panel = "apps" | "extensions" | "targets";
+	type Panel = "apps" | "extensions" | "targets" | "reassign";
 	let focusedPanel: Panel = $state("apps");
+
+	// If focus lands on reassign but action becomes unavailable, fall back to targets
+	$effect(() => {
+		if (focusedPanel === "reassign" && !canReassign) {
+			focusedPanel = "targets";
+		}
+	});
 	let extCursor = $state(0);
 
 	let extFilterInputEl: HTMLInputElement | undefined = $state(undefined);
@@ -424,7 +431,8 @@
 	}
 
 	async function handleAction(action: Action) {
-		const panels: Panel[] = ["apps", "extensions", "targets"];
+		const basePanels: Panel[] = ["apps", "extensions", "targets"];
+		const panels: Panel[] = canReassign ? [...basePanels, "reassign"] : basePanels;
 		const panelIdx = panels.indexOf(focusedPanel);
 
 		switch (action) {
@@ -438,7 +446,7 @@
 				}
 				break;
 			case "focus_right":
-				if (panelIdx < panels.length - 1) {
+				if (panelIdx >= 0 && panelIdx < panels.length - 1) {
 					focusedPanel = panels[panelIdx + 1];
 					if (focusedPanel === "extensions") {
 						clampExtCursor();
@@ -451,6 +459,7 @@
 				break;
 
 			case "move_down": {
+				if (focusedPanel === "reassign") break;
 				const len = panelListLength(focusedPanel);
 				const cur = cursorFor(focusedPanel);
 				if (cur < len - 1) {
@@ -460,6 +469,7 @@
 				break;
 			}
 			case "move_up": {
+				if (focusedPanel === "reassign") break;
 				const cur = cursorFor(focusedPanel);
 				if (cur > 0) {
 					await selectPanelItem(focusedPanel, cur - 1);
@@ -468,11 +478,13 @@
 				break;
 			}
 			case "move_top": {
+				if (focusedPanel === "reassign") break;
 				await selectPanelItem(focusedPanel, 0);
 				scrollCursorIntoView(focusedPanel);
 				break;
 			}
 			case "move_bottom": {
+				if (focusedPanel === "reassign") break;
 				const len = panelListLength(focusedPanel);
 				if (len > 0) {
 					await selectPanelItem(focusedPanel, len - 1);
@@ -482,10 +494,14 @@
 			}
 
 			case "select":
-				await selectPanelItem(
-					focusedPanel,
-					cursorFor(focusedPanel),
-				);
+				if (focusedPanel === "reassign") {
+					if (canReassign) await doReassign();
+				} else {
+					await selectPanelItem(
+						focusedPanel,
+						cursorFor(focusedPanel),
+					);
+				}
 				break;
 
 			case "toggle_select":
@@ -627,7 +643,7 @@
 							? "Sorted A-Z; click to sort by default count"
 							: "Sorted by default count; click to sort A-Z"}
 					>
-						{appSort === "alpha" ? "A-Z" : "#Ext"}
+						{appSort === "alpha" ? "A-Z" : "Qty"}
 					</button>
 				</div>
 				<div class="panel-body" bind:this={panelBodyEls.apps}>
@@ -805,11 +821,17 @@
 			</span>
 			<button
 				class="reassign-btn"
-				onclick={doReassign}
+				class:reassign-focused={focusedPanel === "reassign"}
+				onclick={() => { focusedPanel = "reassign"; doReassign(); }}
 				disabled={!canReassign}
-				title="Reassign"
+				title="Reassign (r)"
 				aria-label="Reassign"
-			>&#x279C;</button>
+			>
+				<span class="reassign-arrow-glyph">&#x279C;</span>
+				{#if canReassign}
+					<span class="reassign-key-hint">r</span>
+				{/if}
+			</button>
 			<span class="reassign-to" class:is-placeholder={!reassignTargetApp}>
 				{reassignTargetApp?.name ?? "target"}
 			</span>
@@ -950,9 +972,10 @@
 	}
 
 	.reassign-btn {
+		position: relative;
 		background: transparent;
 		color: var(--ctp-green);
-		border: none;
+		border: 1px solid transparent;
 		border-radius: 4px;
 		padding: 0 6px;
 		font-size: 16px;
@@ -960,10 +983,62 @@
 		cursor: pointer;
 		flex-shrink: 0;
 		text-shadow: 0 0 8px rgba(166, 227, 161, 0.4);
+		animation: reassign-pulse 2s ease-in-out infinite;
 		transition:
 			color var(--duration-fast) ease,
+			border-color var(--duration-fast) ease,
 			text-shadow var(--duration-normal) ease,
 			transform 0.05s ease;
+	}
+
+	.reassign-arrow-glyph {
+		display: inline-block;
+	}
+
+	.reassign-key-hint {
+		position: absolute;
+		right: 2px;
+		bottom: -3px;
+		font-family: var(--font-mono);
+		font-size: 8px;
+		font-weight: 600;
+		color: var(--ctp-green);
+		line-height: 1;
+		text-shadow: none;
+		letter-spacing: 0;
+		opacity: 0.75;
+	}
+
+	.reassign-btn.reassign-focused {
+		border-color: var(--accent-focus);
+		box-shadow: 0 0 0 2px rgba(203, 166, 247, 0.2);
+		animation: reassign-pulse-focused 1.4s ease-in-out infinite;
+	}
+
+	@keyframes reassign-pulse-focused {
+		0%, 100% {
+			text-shadow: 0 0 10px rgba(166, 227, 161, 0.6);
+			transform: scale(1.05);
+		}
+		50% {
+			text-shadow:
+				0 0 18px rgba(166, 227, 161, 0.9),
+				0 0 28px rgba(166, 227, 161, 0.5);
+			transform: scale(1.15);
+		}
+	}
+
+	@keyframes reassign-pulse {
+		0%, 100% {
+			text-shadow: 0 0 6px rgba(166, 227, 161, 0.35);
+			transform: scale(1);
+		}
+		50% {
+			text-shadow:
+				0 0 14px rgba(166, 227, 161, 0.75),
+				0 0 24px rgba(166, 227, 161, 0.35);
+			transform: scale(1.08);
+		}
 	}
 
 	.reassign-btn:hover {
@@ -983,6 +1058,7 @@
 		cursor: not-allowed;
 		text-shadow: none;
 		opacity: 0.4;
+		animation: none;
 	}
 
 	.reassign-btn:disabled:hover {
