@@ -4,7 +4,20 @@ use core_foundation::base::{ItemRef, TCFType};
 use core_foundation::error::CFErrorRef;
 use core_foundation::string::{CFString, CFStringRef};
 use core_foundation::url::CFURL;
+use std::io::Write;
 use std::path::{Path, PathBuf};
+
+const LOG_PATH: &str = "/tmp/open-with.log";
+
+pub fn log_line(msg: &str) {
+    if let Ok(mut f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(LOG_PATH)
+    {
+        let _ = writeln!(f, "{msg}");
+    }
+}
 
 type LSRolesMask = u32;
 const K_LS_ROLES_ALL: LSRolesMask = 0xFFFFFFFF;
@@ -239,7 +252,7 @@ pub fn scan_and_populate(db: &Database) -> Result<String, Box<dyn std::error::Er
                     ext_count += exts as u32;
                 }
                 Err(e) => {
-                    eprintln!("Skipping {}: {e}", path.display());
+                    log_line(&format!("Skipping {}: {e}", path.display()));
                 }
             }
         }

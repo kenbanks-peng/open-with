@@ -123,7 +123,7 @@ pub fn run() {
     let db = Database::open_or_create().expect("Failed to open database");
 
     if let Err(e) = scanner::scan_and_populate(&db) {
-        eprintln!("Startup scan failed: {e}");
+        scanner::log_line(&format!("Startup scan failed: {e}"));
     }
 
     tauri::Builder::default()

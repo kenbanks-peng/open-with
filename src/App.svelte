@@ -966,11 +966,6 @@
 		white-space: nowrap;
 	}
 
-	.reassign-arrow {
-		font-size: 12px;
-		color: var(--accent-target);
-	}
-
 	.reassign-btn {
 		position: relative;
 		background: transparent;
