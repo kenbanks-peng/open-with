@@ -66,6 +66,21 @@ fn reassign_extensions(
     target_app_id: i64,
 ) -> Result<(), String> {
     let db = state.db.lock().map_err(|e| e.to_string())?;
+
+    // Get the target app's path so we can set the OS-level default
+    let apps = db.get_apps(None).map_err(|e| e.to_string())?;
+    let target_app = apps
+        .iter()
+        .find(|a| a.id == target_app_id)
+        .ok_or_else(|| format!("app with id {target_app_id} not found"))?;
+
+    // Set OS-level default for each extension
+    for ext in &exts {
+        if let Err(e) = scanner::set_default_handler(ext, &target_app.path) {
+            eprintln!("Failed to set OS default for .{ext}: {e}");
+        }
+    }
+
     db.reassign_extensions(&exts, target_app_id)
         .map_err(|e| e.to_string())
 }

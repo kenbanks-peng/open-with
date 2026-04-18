@@ -38,6 +38,12 @@ extern "C" {
         bundle_id: CFStringRef,
         out_error: *mut CFErrorRef,
     ) -> *const core_foundation::array::__CFArray;
+
+    fn LSSetDefaultRoleHandlerForContentType(
+        content_type: CFStringRef,
+        role: LSRolesMask,
+        handler: CFStringRef,
+    ) -> i32;
 }
 
 /// Resolve a UTI to its associated file extensions.
@@ -163,6 +169,52 @@ fn ls_default_app_for_extension(ext: &str) -> Option<(String, String)> {
         .to_string_lossy()
         .to_string();
     Some((name, path_str))
+}
+
+/// Set the OS-level default handler for a file extension.
+/// `app_path` should be the .app bundle path (e.g. "/Applications/Cursor.app").
+pub fn set_default_handler(ext: &str, app_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    // Read bundle identifier from the app's Info.plist
+    let plist_path = Path::new(app_path).join("Contents/Info.plist");
+    let plist_val = plist::Value::from_file(&plist_path)?;
+    let dict = plist_val
+        .as_dictionary()
+        .ok_or("plist is not a dictionary")?;
+    let bundle_id = dict
+        .get("CFBundleIdentifier")
+        .and_then(|v| v.as_string())
+        .ok_or("no CFBundleIdentifier in plist")?;
+
+    // Convert extension to UTI
+    let ext_cf = CFString::new(ext);
+    let tag_class = unsafe { CFString::wrap_under_get_rule(kUTTagClassFilenameExtension) };
+    let uti_ref = unsafe {
+        UTTypeCreatePreferredIdentifierForTag(
+            tag_class.as_concrete_TypeRef(),
+            ext_cf.as_concrete_TypeRef(),
+            std::ptr::null(),
+        )
+    };
+    if uti_ref.is_null() {
+        return Err(format!("could not resolve UTI for extension '{ext}'").into());
+    }
+    let uti: CFString = unsafe { CFString::wrap_under_create_rule(uti_ref) };
+
+    // Set the default handler
+    let handler_cf = CFString::new(bundle_id);
+    let status = unsafe {
+        LSSetDefaultRoleHandlerForContentType(
+            uti.as_concrete_TypeRef(),
+            K_LS_ROLES_ALL,
+            handler_cf.as_concrete_TypeRef(),
+        )
+    };
+    if status != 0 {
+        return Err(
+            format!("LSSetDefaultRoleHandlerForContentType failed with status {status}").into(),
+        );
+    }
+    Ok(())
 }
 
 pub fn scan_and_populate(db: &Database) -> Result<String, Box<dyn std::error::Error>> {
