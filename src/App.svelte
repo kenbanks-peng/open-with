@@ -54,7 +54,7 @@
 	let extCursor = $state(0);
 
 	let extFilterInputEl: HTMLInputElement | undefined = $state(undefined);
-	let panelBodyEls: Record<Panel, HTMLElement | undefined> = $state({
+	let panelBodyEls: Partial<Record<Panel, HTMLElement>> = $state({
 		apps: undefined,
 		extensions: undefined,
 		targets: undefined,
@@ -142,6 +142,10 @@
 		return ids;
 	});
 
+	let sourceSeq = 0;
+	let targetSeq = 0;
+	let refreshSeq = 0;
+
 	async function refresh() {
 		const [a, all, s] = await Promise.all([
 			getApps(),
@@ -196,6 +200,7 @@
 	}
 
 	async function selectSource(appId: number | null) {
+		const seq = ++sourceSeq;
 		selectedSourceId = appId;
 		selectedTargetId = null;
 		selectedExts = new Set();
@@ -213,12 +218,15 @@
 				getCandidateTargets(appId),
 				getExtensionTargetCounts(appId),
 			]);
+			if (seq !== sourceSeq) return;
 			extensions = exts;
 			candidateTargets = targets;
 			filteredTargets = targets;
 			extTargetCounts = new Map(counts);
 		} else {
-			extensions = await getExtensionsForApp();
+			const exts = await getExtensionsForApp();
+			if (seq !== sourceSeq) return;
+			extensions = exts;
 			candidateTargets = [];
 			filteredTargets = [];
 			extTargetCounts = new Map();
@@ -227,6 +235,7 @@
 
 	async function switchSourceKeepState(appId: number) {
 		if (appId === selectedSourceId) return;
+		const seq = ++sourceSeq;
 		selectedSourceId = appId;
 		selectedTargetId = null;
 		eligibleExts = new Set();
@@ -237,6 +246,7 @@
 			getCandidateTargets(appId),
 			getExtensionTargetCounts(appId),
 		]);
+		if (seq !== sourceSeq) return;
 		extensions = exts;
 		candidateTargets = targets;
 		filteredTargets = targets;
@@ -244,6 +254,7 @@
 	}
 
 	async function selectTarget(appId: number | null) {
+		const seq = ++targetSeq;
 		selectedTargetId = appId;
 
 		if (appId !== null && selectedSourceId !== null) {
@@ -251,6 +262,7 @@
 				getEligibleExtensions(selectedSourceId, appId),
 				getExtensionsForApp(appId),
 			]);
+			if (seq !== targetSeq) return;
 			eligibleExts = new Set(eligible);
 			if (!browseAll) targetExtensions = tExts;
 		} else {
@@ -302,17 +314,18 @@
 	}
 
 	async function refreshTargets(exts: Set<string>) {
+		const seq = ++refreshSeq;
 		const prevTargetId = displayedTargets[targetCursor]?.id ?? null;
 
 		if (exts.size > 0 && selectedSourceId !== null) {
-			filteredTargets = await getAppsForExtensions(
-				[...exts],
-				selectedSourceId,
-			);
+			const targets = await getAppsForExtensions([...exts], selectedSourceId);
+			if (seq !== refreshSeq) return;
+			filteredTargets = targets;
 		} else {
 			filteredTargets = candidateTargets;
 			if (selectedTargetId !== null && selectedSourceId !== null) {
 				const eligible = await getEligibleExtensions(selectedSourceId, selectedTargetId);
+				if (seq !== refreshSeq) return;
 				eligibleExts = new Set(eligible);
 			} else {
 				eligibleExts = new Set();
@@ -368,10 +381,26 @@
 			undoStack = [...undoStack, { exts, fromAppId, toAppId }];
 			errorMessage = null;
 			selectedExts = new Set();
-			selectedTargetId = null;
-			eligibleExts = new Set();
 			await refresh();
-			await selectSource(fromAppId);
+			// Refresh source data without losing target selection
+			const [newExts, newTargets, newCounts] = await Promise.all([
+				getExtensionsForApp(fromAppId),
+				getCandidateTargets(fromAppId),
+				getExtensionTargetCounts(fromAppId),
+			]);
+			extensions = newExts;
+			candidateTargets = newTargets;
+			extTargetCounts = new Map(newCounts);
+			filteredTargets = newTargets;
+			// Re-evaluate eligibility for the preserved target
+			const targetStillValid = browseAll || newTargets.some((a) => a.id === toAppId);
+			if (!targetStillValid) {
+				selectedTargetId = null;
+				eligibleExts = new Set();
+			} else {
+				const eligible = await getEligibleExtensions(fromAppId, toAppId);
+				eligibleExts = new Set(eligible);
+			}
 		} catch (e) {
 			errorMessage = String(e);
 		}
