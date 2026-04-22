@@ -13,6 +13,7 @@ export type Action =
 	| "search"
 	| "escape"
 	| "reassign"
+	| "undo"
 	| "scroll_half_down"
 	| "scroll_half_up";
 
@@ -52,6 +53,7 @@ const keymap: { combo: KeyCombo; action: Action }[] = [
 	{ combo: { key: "/" }, action: "search" },
 	{ combo: { key: "Escape" }, action: "escape" },
 	{ combo: { key: "r" }, action: "reassign" },
+	{ combo: { key: "z", ctrl: true }, action: "undo" },
 
 	// Scrolling
 	{ combo: { key: "d", ctrl: true }, action: "scroll_half_down" },

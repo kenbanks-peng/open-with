@@ -27,6 +27,10 @@
 	let selectedExts: Set<string> = $state(new Set());
 	let summary: [number, number] = $state([0, 0]);
 
+	let errorMessage: string | null = $state(null);
+	type UndoEntry = { exts: string[]; fromAppId: number; toAppId: number };
+	let undoStack: UndoEntry[] = $state([]);
+
 	let extFilter = $state("");
 	let selectedSourceId: number | null = $state(null);
 	let selectedTargetId: number | null = $state(null);
@@ -355,19 +359,36 @@
 	}
 
 	async function doReassign() {
-		if (
-			selectedTargetId === null ||
-			selectedSourceId === null ||
-			selectedExts.size === 0
-		)
-			return;
+		if (selectedTargetId === null || selectedSourceId === null || selectedExts.size === 0) return;
 		const exts = [...selectedExts];
-		await reassignExtensions(exts, selectedTargetId);
-		selectedExts = new Set();
-		selectedTargetId = null;
-		eligibleExts = new Set();
-		await refresh();
-		await selectSource(selectedSourceId);
+		const fromAppId = selectedSourceId;
+		const toAppId = selectedTargetId;
+		try {
+			await reassignExtensions(exts, toAppId);
+			undoStack = [...undoStack, { exts, fromAppId, toAppId }];
+			errorMessage = null;
+			selectedExts = new Set();
+			selectedTargetId = null;
+			eligibleExts = new Set();
+			await refresh();
+			await selectSource(fromAppId);
+		} catch (e) {
+			errorMessage = String(e);
+		}
+	}
+
+	async function doUndo() {
+		if (undoStack.length === 0) return;
+		const last = undoStack[undoStack.length - 1];
+		try {
+			await reassignExtensions(last.exts, last.fromAppId);
+			undoStack = undoStack.slice(0, -1);
+			errorMessage = null;
+			await refresh();
+			await selectSource(last.fromAppId);
+		} catch (e) {
+			errorMessage = String(e);
+		}
 	}
 
 	function panelListLength(panel: Panel): number {
@@ -574,6 +595,10 @@
 				await doReassign();
 				break;
 
+			case "undo":
+				await doUndo();
+				break;
+
 			case "search":
 				extFilterInputEl?.focus();
 				break;
@@ -682,7 +707,7 @@
 							placeholder="Search all extensions..."
 							bind:value={extFilter}
 							bind:this={extFilterInputEl}
-							oninput={() => { extCursor = 0; selectedExts = new Set(); selectedSourceId = null; selectedTargetId = null; eligibleExts = new Set(); }}
+							oninput={() => { extCursor = 0; selectedExts = new Set(); selectedTargetId = null; eligibleExts = new Set(); }}
 						/>
 						{#if extFilter}
 							<button
@@ -800,6 +825,13 @@
 		</div>
 	{/if}
 
+	{#if errorMessage}
+		<div class="error-banner" role="alert">
+			<span>{errorMessage}</span>
+			<button class="error-dismiss" onclick={() => errorMessage = null}>&times;</button>
+		</div>
+	{/if}
+
 	<footer class:footer-active={canReassign}>
 		<span class="footer-side footer-side-left">
 			<span class="footer-stat">{summary[0]} apps</span>
@@ -836,7 +868,11 @@
 				{reassignTargetApp?.name ?? "target"}
 			</span>
 		</span>
-		<span class="footer-side footer-side-right"></span>
+		<span class="footer-side footer-side-right">
+			{#if undoStack.length > 0}
+				<button class="undo-btn" onclick={doUndo} title="Undo last reassign (⌘Z)">↩ undo</button>
+			{/if}
+		</span>
 	</footer>
 </main>
 
@@ -1456,6 +1492,50 @@
 		color: var(--text-muted);
 		font-size: var(--font-sm);
 		white-space: nowrap;
+	}
+
+	/* Error banner */
+	.error-banner {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 6px 16px;
+		background: rgba(243, 139, 168, 0.12);
+		border-top: 1px solid rgba(243, 139, 168, 0.35);
+		color: var(--ctp-red, #f38ba8);
+		font-size: var(--font-sm);
+		flex-shrink: 0;
+	}
+
+	.error-dismiss {
+		background: transparent;
+		border: none;
+		color: var(--ctp-red, #f38ba8);
+		font-size: 18px;
+		cursor: pointer;
+		padding: 0 4px;
+		line-height: 1;
+		opacity: 0.7;
+	}
+
+	.error-dismiss:hover {
+		background: transparent;
+		opacity: 1;
+		transform: none;
+	}
+
+	/* Undo button */
+	.undo-btn {
+		padding: 2px 8px;
+		font-size: var(--font-sm);
+		color: var(--text-muted);
+		border-color: var(--border);
+		background: transparent;
+	}
+
+	.undo-btn:hover {
+		color: var(--text-primary);
+		background: var(--bg-surface0);
 	}
 
 	/* Empty & loading states */
