@@ -4,6 +4,7 @@ mod scanner;
 use db::Database;
 use serde::Serialize;
 use std::sync::Mutex;
+use std::time::Duration;
 use tauri::State;
 
 struct AppState {
@@ -65,6 +66,9 @@ fn reassign_extensions(
     exts: Vec<String>,
     target_app_id: i64,
 ) -> Result<(), String> {
+    scanner::log_line(&format!(
+        "reassign_extensions start: exts={exts:?}, target_app_id={target_app_id}"
+    ));
     let db = state.db.lock().map_err(|e| e.to_string())?;
 
     // Get the target app's path so we can set the OS-level default
@@ -73,10 +77,13 @@ fn reassign_extensions(
         .iter()
         .find(|a| a.id == target_app_id)
         .ok_or_else(|| format!("app with id {target_app_id} not found"))?;
+    let target_bundle_id = scanner::app_bundle_id(&target_app.path).map_err(|e| e.to_string())?;
 
-    // Set OS-level defaults first. Do not update the local DB unless macOS
-    // accepts every change; otherwise the UI drifts from the real system state.
+    // Set OS-level defaults first. macOS may prompt asynchronously, so avoid
+    // querying Launch Services again in this command path; it can hang after
+    // "Keep Unchanged".
     for ext in &exts {
+        scanner::log_line(&format!("setting default handler for .{ext}"));
         scanner::set_default_handler(ext, &target_app.path).map_err(|e| {
             let msg = format!(
                 "Failed to set macOS default for .{ext} to {}: {e}",
@@ -85,10 +92,46 @@ fn reassign_extensions(
             scanner::log_line(&msg);
             msg
         })?;
+        scanner::log_line(&format!("default handler request sent for .{ext}"));
     }
 
-    db.reassign_extensions(&exts, target_app_id)
-        .map_err(|e| e.to_string())
+    std::thread::spawn(move || {
+        scanner::log_line(&format!(
+            "delayed verification scheduled: exts={exts:?}, target_app_id={target_app_id}"
+        ));
+        std::thread::sleep(Duration::from_secs(3));
+
+        let changed_exts: Vec<String> = exts
+            .into_iter()
+            .filter(|ext| {
+                let current = scanner::default_handler_bundle_id(ext);
+                let changed = current.as_deref() == Some(target_bundle_id.as_str());
+                scanner::log_line(&format!(
+                    "delayed verification: ext={ext}, current_handler={current:?}, target={target_bundle_id}, changed={changed}"
+                ));
+                changed
+            })
+            .collect();
+
+        if changed_exts.is_empty() {
+            scanner::log_line("delayed verification: no DB updates needed");
+            return;
+        }
+
+        match Database::open_or_create()
+            .and_then(|db| db.reassign_extensions(&changed_exts, target_app_id))
+        {
+            Ok(()) => scanner::log_line(&format!(
+                "delayed verification: DB updated for changed_exts={changed_exts:?}"
+            )),
+            Err(e) => scanner::log_line(&format!(
+                "delayed verification: DB update failed for changed_exts={changed_exts:?}: {e}"
+            )),
+        }
+    });
+
+    scanner::log_line("reassign_extensions done: verification pending");
+    Ok(())
 }
 
 #[tauri::command]
@@ -126,6 +169,11 @@ fn get_summary(state: State<AppState>) -> Result<(i64, i64), String> {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    scanner::log_line("app starting");
+    std::panic::set_hook(Box::new(|info| {
+        scanner::log_line(&format!("panic: {info}"));
+    }));
+
     let db = Database::open_or_create().expect("Failed to open database");
 
     if let Err(e) = scanner::scan_and_populate(&db) {
@@ -145,6 +193,23 @@ pub fn run() {
             get_extension_target_counts,
             get_summary,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .on_window_event(|_, event| {
+            scanner::log_line(&format!("window event: {event:?}"));
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                scanner::log_line("close requested; preventing close");
+                api.prevent_close();
+            }
+        })
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|_, event| match event {
+            tauri::RunEvent::MainEventsCleared => {}
+            tauri::RunEvent::ExitRequested { api, code, .. } => {
+                scanner::log_line(&format!(
+                    "exit requested with code {code:?}; preventing exit"
+                ));
+                api.prevent_exit();
+            }
+            event => scanner::log_line(&format!("run event: {event:?}")),
+        });
 }

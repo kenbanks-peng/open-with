@@ -6,11 +6,8 @@ use core_foundation::string::{CFString, CFStringRef};
 use core_foundation::url::CFURL;
 use std::io::Write;
 use std::path::{Path, PathBuf};
-use std::time::{Duration, Instant};
 
 const LOG_PATH: &str = "/tmp/open-with.log";
-const DEFAULT_HANDLER_CONFIRM_TIMEOUT: Duration = Duration::from_secs(120);
-const DEFAULT_HANDLER_CONFIRM_POLL: Duration = Duration::from_millis(500);
 
 pub fn log_line(msg: &str) {
     if let Ok(mut f) = std::fs::OpenOptions::new()
@@ -191,6 +188,9 @@ fn ls_default_app_for_extension(ext: &str) -> Option<(String, String)> {
 /// `app_path` should be the .app bundle path (e.g. "/Applications/Cursor.app").
 pub fn set_default_handler(ext: &str, app_path: &str) -> Result<(), Box<dyn std::error::Error>> {
     let ext = ext.trim_start_matches('.');
+    log_line(&format!(
+        "set_default_handler start: ext={ext}, app_path={app_path}"
+    ));
 
     // Read bundle identifier from the app's Info.plist
     let plist_path = Path::new(app_path).join("Contents/Info.plist");
@@ -202,6 +202,9 @@ pub fn set_default_handler(ext: &str, app_path: &str) -> Result<(), Box<dyn std:
         .get("CFBundleIdentifier")
         .and_then(|v| v.as_string())
         .ok_or("no CFBundleIdentifier in plist")?;
+    log_line(&format!(
+        "set_default_handler bundle id: ext={ext}, bundle_id={bundle_id}"
+    ));
 
     // Convert extension to UTI
     let ext_cf = CFString::new(ext);
@@ -217,9 +220,13 @@ pub fn set_default_handler(ext: &str, app_path: &str) -> Result<(), Box<dyn std:
         return Err(format!("could not resolve UTI for extension '{ext}'").into());
     }
     let uti: CFString = unsafe { CFString::wrap_under_create_rule(uti_ref) };
+    log_line(&format!("set_default_handler uti: ext={ext}, uti={uti}"));
 
     // Set the default handler
     let handler_cf = CFString::new(bundle_id);
+    log_line(&format!(
+        "calling LSSetDefaultRoleHandlerForContentType: ext={ext}"
+    ));
     let status = unsafe {
         LSSetDefaultRoleHandlerForContentType(
             uti.as_concrete_TypeRef(),
@@ -227,40 +234,55 @@ pub fn set_default_handler(ext: &str, app_path: &str) -> Result<(), Box<dyn std:
             handler_cf.as_concrete_TypeRef(),
         )
     };
+    log_line(&format!(
+        "LSSetDefaultRoleHandlerForContentType returned: ext={ext}, status={status}"
+    ));
     if status != 0 {
         return Err(
             format!("LSSetDefaultRoleHandlerForContentType failed with status {status}").into(),
         );
     }
 
-    let deadline = Instant::now() + DEFAULT_HANDLER_CONFIRM_TIMEOUT;
-    let mut last_handler = None;
-    while Instant::now() < deadline {
-        let current_handler_ref = unsafe {
-            LSCopyDefaultRoleHandlerForContentType(uti.as_concrete_TypeRef(), K_LS_ROLES_ALL)
-        };
-        if !current_handler_ref.is_null() {
-            let current_handler: CFString =
-                unsafe { CFString::wrap_under_create_rule(current_handler_ref) };
-            let current_handler = current_handler.to_string();
-            if current_handler == bundle_id {
-                return Ok(());
-            }
-            last_handler = Some(current_handler);
-        }
-        std::thread::sleep(DEFAULT_HANDLER_CONFIRM_POLL);
-    }
+    Ok(())
+}
 
-    match last_handler {
-        Some(current_handler) => Err(format!(
-            "Timed out waiting for macOS to assign .{ext} to {bundle_id}; current handler is {current_handler}"
+pub fn app_bundle_id(app_path: &str) -> Result<String, Box<dyn std::error::Error>> {
+    let plist_path = Path::new(app_path).join("Contents/Info.plist");
+    let plist_val = plist::Value::from_file(&plist_path)?;
+    let dict = plist_val
+        .as_dictionary()
+        .ok_or("plist is not a dictionary")?;
+    let bundle_id = dict
+        .get("CFBundleIdentifier")
+        .and_then(|v| v.as_string())
+        .ok_or("no CFBundleIdentifier in plist")?;
+    Ok(bundle_id.to_string())
+}
+
+pub fn default_handler_bundle_id(ext: &str) -> Option<String> {
+    let ext = ext.trim_start_matches('.');
+    let ext_cf = CFString::new(ext);
+    let tag_class = unsafe { CFString::wrap_under_get_rule(kUTTagClassFilenameExtension) };
+    let uti_ref = unsafe {
+        UTTypeCreatePreferredIdentifierForTag(
+            tag_class.as_concrete_TypeRef(),
+            ext_cf.as_concrete_TypeRef(),
+            std::ptr::null(),
         )
-        .into()),
-        None => Err(format!(
-            "Timed out waiting for macOS to report a default handler for .{ext} after setting it to {bundle_id}"
-        )
-        .into()),
+    };
+    if uti_ref.is_null() {
+        return None;
     }
+    let uti: CFString = unsafe { CFString::wrap_under_create_rule(uti_ref) };
+    let current_handler_ref = unsafe {
+        LSCopyDefaultRoleHandlerForContentType(uti.as_concrete_TypeRef(), K_LS_ROLES_ALL)
+    };
+    if current_handler_ref.is_null() {
+        return None;
+    }
+    let current_handler: CFString =
+        unsafe { CFString::wrap_under_create_rule(current_handler_ref) };
+    Some(current_handler.to_string())
 }
 
 pub fn scan_and_populate(db: &Database) -> Result<String, Box<dyn std::error::Error>> {
