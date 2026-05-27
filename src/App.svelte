@@ -376,6 +376,12 @@
 		const exts = [...selectedExts];
 		const fromAppId = selectedSourceId;
 		const toAppId = selectedTargetId;
+		const refreshAfterDelayedBackendUpdate = async () => {
+			await refresh();
+			if (selectedSourceId !== null) {
+				await selectSource(selectedSourceId);
+			}
+		};
 		try {
 			await reassignExtensions(exts, toAppId);
 			undoStack = [...undoStack, { exts, fromAppId, toAppId }];
@@ -401,6 +407,11 @@
 				const eligible = await getEligibleExtensions(fromAppId, toAppId);
 				eligibleExts = new Set(eligible);
 			}
+			setTimeout(() => {
+				refreshAfterDelayedBackendUpdate().catch((e) => {
+					errorMessage = String(e);
+				});
+			}, 11_000);
 		} catch (e) {
 			errorMessage = String(e);
 		}

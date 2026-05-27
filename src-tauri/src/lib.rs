@@ -77,8 +77,6 @@ fn reassign_extensions(
         .iter()
         .find(|a| a.id == target_app_id)
         .ok_or_else(|| format!("app with id {target_app_id} not found"))?;
-    let target_bundle_id = scanner::app_bundle_id(&target_app.path).map_err(|e| e.to_string())?;
-
     // Set OS-level defaults first. macOS may prompt asynchronously, so avoid
     // querying Launch Services again in this command path; it can hang after
     // "Keep Unchanged".
@@ -99,34 +97,36 @@ fn reassign_extensions(
         scanner::log_line(&format!(
             "delayed verification scheduled: exts={exts:?}, target_app_id={target_app_id}"
         ));
-        std::thread::sleep(Duration::from_secs(3));
+        std::thread::sleep(Duration::from_secs(10));
 
-        let changed_exts: Vec<String> = exts
-            .into_iter()
-            .filter(|ext| {
-                let current = scanner::default_handler_bundle_id(ext);
-                let changed = current.as_deref() == Some(target_bundle_id.as_str());
-                scanner::log_line(&format!(
-                    "delayed verification: ext={ext}, current_handler={current:?}, target={target_bundle_id}, changed={changed}"
-                ));
-                changed
-            })
-            .collect();
+        let db = match Database::open_or_create() {
+            Ok(db) => db,
+            Err(e) => {
+                scanner::log_line(&format!("delayed refresh: DB open failed: {e}"));
+                return;
+            }
+        };
 
-        if changed_exts.is_empty() {
-            scanner::log_line("delayed verification: no DB updates needed");
-            return;
-        }
+        for ext in exts {
+            let current = scanner::ls_default_app_for_extension(&ext);
+            scanner::log_line(&format!(
+                "delayed refresh: ext={ext}, current_default={current:?}"
+            ));
+            let Some((_, app_path)) = current else {
+                continue;
+            };
 
-        match Database::open_or_create()
-            .and_then(|db| db.reassign_extensions(&changed_exts, target_app_id))
-        {
-            Ok(()) => scanner::log_line(&format!(
-                "delayed verification: DB updated for changed_exts={changed_exts:?}"
-            )),
-            Err(e) => scanner::log_line(&format!(
-                "delayed verification: DB update failed for changed_exts={changed_exts:?}: {e}"
-            )),
+            match db.refresh_default_app_by_path(&ext, &app_path) {
+                Ok(true) => scanner::log_line(&format!(
+                    "delayed refresh: DB updated for .{ext} to {app_path}"
+                )),
+                Ok(false) => scanner::log_line(&format!(
+                    "delayed refresh: no known app for .{ext} path {app_path}"
+                )),
+                Err(e) => scanner::log_line(&format!(
+                    "delayed refresh: DB update failed for .{ext}: {e}"
+                )),
+            }
         }
     });
 

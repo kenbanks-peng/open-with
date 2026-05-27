@@ -81,6 +81,16 @@ impl Database {
         Ok(())
     }
 
+    pub fn refresh_default_app_by_path(&self, ext: &str, app_path: &str) -> Result<bool> {
+        let updated = self.conn.execute(
+            "UPDATE extensions
+             SET default_app_id = (SELECT id FROM apps WHERE path = ?1)
+             WHERE ext = ?2 AND EXISTS (SELECT 1 FROM apps WHERE path = ?1)",
+            params![app_path, ext],
+        )?;
+        Ok(updated > 0)
+    }
+
     pub fn remove_stale_ext_apps(&self, app_id: i64, current_exts: &[String]) -> Result<()> {
         if current_exts.is_empty() {
             self.conn
@@ -208,17 +218,6 @@ impl Database {
             r.get::<_, String>(0)
         })?;
         rows.collect()
-    }
-
-    /// Reassign extensions to a new default app.
-    pub fn reassign_extensions(&self, exts: &[String], target_app_id: i64) -> Result<()> {
-        let mut stmt = self
-            .conn
-            .prepare("UPDATE extensions SET default_app_id = ?1 WHERE ext = ?2")?;
-        for ext in exts {
-            stmt.execute(params![target_app_id, ext])?;
-        }
-        Ok(())
     }
 
     /// Get all apps that can open a given extension.

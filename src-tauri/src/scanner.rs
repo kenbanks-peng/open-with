@@ -139,7 +139,7 @@ fn ls_apps_for_extension(ext: &str) -> Vec<(String, String)> {
 
 /// Query Launch Services for the system default app for a given file extension.
 /// Returns (app_name, app_path) if found.
-fn ls_default_app_for_extension(ext: &str) -> Option<(String, String)> {
+pub fn ls_default_app_for_extension(ext: &str) -> Option<(String, String)> {
     let ext_cf = CFString::new(ext);
     let tag_class = unsafe { CFString::wrap_under_get_rule(kUTTagClassFilenameExtension) };
 
@@ -244,45 +244,6 @@ pub fn set_default_handler(ext: &str, app_path: &str) -> Result<(), Box<dyn std:
     }
 
     Ok(())
-}
-
-pub fn app_bundle_id(app_path: &str) -> Result<String, Box<dyn std::error::Error>> {
-    let plist_path = Path::new(app_path).join("Contents/Info.plist");
-    let plist_val = plist::Value::from_file(&plist_path)?;
-    let dict = plist_val
-        .as_dictionary()
-        .ok_or("plist is not a dictionary")?;
-    let bundle_id = dict
-        .get("CFBundleIdentifier")
-        .and_then(|v| v.as_string())
-        .ok_or("no CFBundleIdentifier in plist")?;
-    Ok(bundle_id.to_string())
-}
-
-pub fn default_handler_bundle_id(ext: &str) -> Option<String> {
-    let ext = ext.trim_start_matches('.');
-    let ext_cf = CFString::new(ext);
-    let tag_class = unsafe { CFString::wrap_under_get_rule(kUTTagClassFilenameExtension) };
-    let uti_ref = unsafe {
-        UTTypeCreatePreferredIdentifierForTag(
-            tag_class.as_concrete_TypeRef(),
-            ext_cf.as_concrete_TypeRef(),
-            std::ptr::null(),
-        )
-    };
-    if uti_ref.is_null() {
-        return None;
-    }
-    let uti: CFString = unsafe { CFString::wrap_under_create_rule(uti_ref) };
-    let current_handler_ref = unsafe {
-        LSCopyDefaultRoleHandlerForContentType(uti.as_concrete_TypeRef(), K_LS_ROLES_ALL)
-    };
-    if current_handler_ref.is_null() {
-        return None;
-    }
-    let current_handler: CFString =
-        unsafe { CFString::wrap_under_create_rule(current_handler_ref) };
-    Some(current_handler.to_string())
 }
 
 pub fn scan_and_populate(db: &Database) -> Result<String, Box<dyn std::error::Error>> {
