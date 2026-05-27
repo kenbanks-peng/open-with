@@ -374,44 +374,44 @@
 	async function doReassign() {
 		if (selectedTargetId === null || selectedSourceId === null || selectedExts.size === 0) return;
 		const exts = [...selectedExts];
+		const extSet = new Set(exts);
 		const fromAppId = selectedSourceId;
 		const toAppId = selectedTargetId;
+		const toAppName = reassignTargetApp?.name ?? null;
 		const refreshAfterDelayedBackendUpdate = async () => {
 			await refresh();
 			if (selectedSourceId !== null) {
 				await selectSource(selectedSourceId);
 			}
 		};
+		const applyOptimisticUiUpdate = () => {
+			const updateExt = (e: Extension): Extension =>
+				extSet.has(e.ext)
+					? { ...e, default_app_id: toAppId, default_app_name: toAppName }
+					: e;
+
+			allExtensions = allExtensions.map(updateExt);
+			extensions = extensions.map(updateExt).filter((e) => e.default_app_id === fromAppId);
+			targetExtensions = targetExtensions.map(updateExt);
+			apps = apps.map((a) => {
+				if (a.id === fromAppId) return { ...a, ext_count: Math.max(0, a.ext_count - exts.length) };
+				if (a.id === toAppId) return { ...a, ext_count: a.ext_count + exts.length };
+				return a;
+			});
+		};
 		try {
 			await reassignExtensions(exts, toAppId);
 			undoStack = [...undoStack, { exts, fromAppId, toAppId }];
 			errorMessage = null;
 			selectedExts = new Set();
-			await refresh();
-			// Refresh source data without losing target selection
-			const [newExts, newTargets, newCounts] = await Promise.all([
-				getExtensionsForApp(fromAppId),
-				getCandidateTargets(fromAppId),
-				getExtensionTargetCounts(fromAppId),
-			]);
-			extensions = newExts;
-			candidateTargets = newTargets;
-			extTargetCounts = new Map(newCounts);
-			filteredTargets = newTargets;
-			// Re-evaluate eligibility for the preserved target
-			const targetStillValid = browseAll || newTargets.some((a) => a.id === toAppId);
-			if (!targetStillValid) {
-				selectedTargetId = null;
-				eligibleExts = new Set();
-			} else {
-				const eligible = await getEligibleExtensions(fromAppId, toAppId);
-				eligibleExts = new Set(eligible);
+			applyOptimisticUiUpdate();
+			for (let i = 1; i <= 6; i++) {
+				setTimeout(() => {
+					refreshAfterDelayedBackendUpdate().catch((e) => {
+						errorMessage = String(e);
+					});
+				}, i * 500);
 			}
-			setTimeout(() => {
-				refreshAfterDelayedBackendUpdate().catch((e) => {
-					errorMessage = String(e);
-				});
-			}, 11_000);
 		} catch (e) {
 			errorMessage = String(e);
 		}

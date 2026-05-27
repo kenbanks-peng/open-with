@@ -81,6 +81,16 @@ impl Database {
         Ok(())
     }
 
+    pub fn set_default_apps(&self, exts: &[String], app_id: i64) -> Result<()> {
+        let mut stmt = self
+            .conn
+            .prepare("UPDATE extensions SET default_app_id = ?1 WHERE ext = ?2")?;
+        for ext in exts {
+            stmt.execute(params![app_id, ext])?;
+        }
+        Ok(())
+    }
+
     pub fn refresh_default_app_by_path(&self, ext: &str, app_path: &str) -> Result<bool> {
         let updated = self.conn.execute(
             "UPDATE extensions

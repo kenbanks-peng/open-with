@@ -93,12 +93,16 @@ fn reassign_extensions(
         scanner::log_line(&format!("default handler request sent for .{ext}"));
     }
 
+    db.set_default_apps(&exts, target_app_id)
+        .map_err(|e| e.to_string())?;
+    scanner::log_line(&format!(
+        "optimistic DB update applied: exts={exts:?}, target_app_id={target_app_id}"
+    ));
+
     std::thread::spawn(move || {
         scanner::log_line(&format!(
             "delayed verification scheduled: exts={exts:?}, target_app_id={target_app_id}"
         ));
-        std::thread::sleep(Duration::from_secs(10));
-
         let db = match Database::open_or_create() {
             Ok(db) => db,
             Err(e) => {
@@ -107,25 +111,28 @@ fn reassign_extensions(
             }
         };
 
-        for ext in exts {
-            let current = scanner::ls_default_app_for_extension(&ext);
-            scanner::log_line(&format!(
-                "delayed refresh: ext={ext}, current_default={current:?}"
-            ));
-            let Some((_, app_path)) = current else {
-                continue;
-            };
+        for attempt in 1..=6 {
+            std::thread::sleep(Duration::from_millis(500));
+            for ext in &exts {
+                let current = scanner::ls_default_app_for_extension(ext);
+                scanner::log_line(&format!(
+                    "delayed refresh attempt {attempt}: ext={ext}, current_default={current:?}"
+                ));
+                let Some((_, app_path)) = current else {
+                    continue;
+                };
 
-            match db.refresh_default_app_by_path(&ext, &app_path) {
-                Ok(true) => scanner::log_line(&format!(
-                    "delayed refresh: DB updated for .{ext} to {app_path}"
-                )),
-                Ok(false) => scanner::log_line(&format!(
-                    "delayed refresh: no known app for .{ext} path {app_path}"
-                )),
-                Err(e) => scanner::log_line(&format!(
-                    "delayed refresh: DB update failed for .{ext}: {e}"
-                )),
+                match db.refresh_default_app_by_path(ext, &app_path) {
+                    Ok(true) => scanner::log_line(&format!(
+                        "delayed refresh attempt {attempt}: DB updated for .{ext} to {app_path}"
+                    )),
+                    Ok(false) => scanner::log_line(&format!(
+                        "delayed refresh attempt {attempt}: no known app for .{ext} path {app_path}"
+                    )),
+                    Err(e) => scanner::log_line(&format!(
+                        "delayed refresh attempt {attempt}: DB update failed for .{ext}: {e}"
+                    )),
+                }
             }
         }
     });
