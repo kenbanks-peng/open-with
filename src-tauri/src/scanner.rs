@@ -6,8 +6,11 @@ use core_foundation::string::{CFString, CFStringRef};
 use core_foundation::url::CFURL;
 use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 const LOG_PATH: &str = "/tmp/open-with.log";
+const DEFAULT_HANDLER_CONFIRM_TIMEOUT: Duration = Duration::from_secs(120);
+const DEFAULT_HANDLER_CONFIRM_POLL: Duration = Duration::from_millis(500);
 
 pub fn log_line(msg: &str) {
     if let Ok(mut f) = std::fs::OpenOptions::new()
@@ -187,6 +190,8 @@ fn ls_default_app_for_extension(ext: &str) -> Option<(String, String)> {
 /// Set the OS-level default handler for a file extension.
 /// `app_path` should be the .app bundle path (e.g. "/Applications/Cursor.app").
 pub fn set_default_handler(ext: &str, app_path: &str) -> Result<(), Box<dyn std::error::Error>> {
+    let ext = ext.trim_start_matches('.');
+
     // Read bundle identifier from the app's Info.plist
     let plist_path = Path::new(app_path).join("Contents/Info.plist");
     let plist_val = plist::Value::from_file(&plist_path)?;
@@ -227,7 +232,35 @@ pub fn set_default_handler(ext: &str, app_path: &str) -> Result<(), Box<dyn std:
             format!("LSSetDefaultRoleHandlerForContentType failed with status {status}").into(),
         );
     }
-    Ok(())
+
+    let deadline = Instant::now() + DEFAULT_HANDLER_CONFIRM_TIMEOUT;
+    let mut last_handler = None;
+    while Instant::now() < deadline {
+        let current_handler_ref = unsafe {
+            LSCopyDefaultRoleHandlerForContentType(uti.as_concrete_TypeRef(), K_LS_ROLES_ALL)
+        };
+        if !current_handler_ref.is_null() {
+            let current_handler: CFString =
+                unsafe { CFString::wrap_under_create_rule(current_handler_ref) };
+            let current_handler = current_handler.to_string();
+            if current_handler == bundle_id {
+                return Ok(());
+            }
+            last_handler = Some(current_handler);
+        }
+        std::thread::sleep(DEFAULT_HANDLER_CONFIRM_POLL);
+    }
+
+    match last_handler {
+        Some(current_handler) => Err(format!(
+            "Timed out waiting for macOS to assign .{ext} to {bundle_id}; current handler is {current_handler}"
+        )
+        .into()),
+        None => Err(format!(
+            "Timed out waiting for macOS to report a default handler for .{ext} after setting it to {bundle_id}"
+        )
+        .into()),
+    }
 }
 
 pub fn scan_and_populate(db: &Database) -> Result<String, Box<dyn std::error::Error>> {

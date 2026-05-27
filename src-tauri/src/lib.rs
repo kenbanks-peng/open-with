@@ -74,11 +74,17 @@ fn reassign_extensions(
         .find(|a| a.id == target_app_id)
         .ok_or_else(|| format!("app with id {target_app_id} not found"))?;
 
-    // Set OS-level default for each extension
+    // Set OS-level defaults first. Do not update the local DB unless macOS
+    // accepts every change; otherwise the UI drifts from the real system state.
     for ext in &exts {
-        if let Err(e) = scanner::set_default_handler(ext, &target_app.path) {
-            eprintln!("Failed to set OS default for .{ext}: {e}");
-        }
+        scanner::set_default_handler(ext, &target_app.path).map_err(|e| {
+            let msg = format!(
+                "Failed to set macOS default for .{ext} to {}: {e}",
+                target_app.name
+            );
+            scanner::log_line(&msg);
+            msg
+        })?;
     }
 
     db.reassign_extensions(&exts, target_app_id)
