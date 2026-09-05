@@ -2,6 +2,9 @@
 "cargo:tauri-cli" = "latest"
 "npm:vite" = "latest"
 
+[env]
+BINDIR = "./bin"
+
 [tasks.setup]
 description = "Install dependencies"
 run = "bun install"
@@ -11,8 +14,13 @@ description = "Run in dev mode"
 run = "cargo tauri dev"
 
 [tasks.build]
-description = "Build"
-run = "cargo tauri build"
+description = "Build production release"
+run = "cargo tauri build --no-bundle"
+
+[tasks.deploy]
+description = "Deploy production binary"
+depends = ["build"]
+run = "mkdir -p \"$BINDIR\" && cp src-tauri/target/release/open-with \"$BINDIR/\""
 
 [tasks.reset]
 description = "Reset database"
