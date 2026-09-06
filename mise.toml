@@ -1,6 +1,5 @@
 [tools]
-"cargo:tauri-cli" = "latest"
-"npm:vite" = "latest"
+bun = "latest"
 
 [env]
 BINDIR = "./bin"
@@ -11,11 +10,13 @@ run = "bun install"
 
 [tasks.dev]
 description = "Run in dev mode"
-run = "cargo tauri dev"
+depends = ["setup"]
+run = "bun run tauri dev"
 
 [tasks.build]
 description = "Build production release"
-run = "cargo tauri build --no-bundle"
+depends = ["setup"]
+run = "bun run tauri build --no-bundle"
 
 [tasks.deploy]
 description = "Deploy production binary"
